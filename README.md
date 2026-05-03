@@ -1,4 +1,4 @@
-# Naver Cafe Posts Downloader
+# Naver Cafe Posts Downloader 1
 
 네이버 카페 게시글을 로컬 파일로 저장하는 Windows용 Python 도구입니다.
 
