@@ -31,6 +31,16 @@
 
 저장이 완료되면 `saved_posts` 폴더 아래에 게시글 제목으로 된 폴더가 생성됩니다.
 
+## GPT에서 불러오기
+
+ChatGPT나 다른 도구에서 GitHub 페이지를 바로 읽지 못하면 아래 주소를 사용하세요.
+
+- Repository: `https://github.com/Bum-Boo/Naver-Cafe-Posts-Downloader`
+- ZIP: `https://github.com/Bum-Boo/Naver-Cafe-Posts-Downloader/archive/refs/heads/main.zip`
+- Raw README: `https://raw.githubusercontent.com/Bum-Boo/Naver-Cafe-Posts-Downloader/refs/heads/main/README.md`
+
+일부 도구는 한글 파일명을 제대로 처리하지 못할 수 있어, 같은 사용 설명을 `USAGE.md`에도 제공합니다.
+
 ## 저장 결과
 
 각 게시글은 별도 폴더에 저장됩니다.
