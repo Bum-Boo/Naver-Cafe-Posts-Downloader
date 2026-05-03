@@ -54,7 +54,7 @@ URL 입력 방식:
 python save_naver_cafe_post.py
 
 URL을 바로 넣어서 저장:
-python save_naver_cafe_post.py --url "https://cafe.naver.com/irelandprestigeuhak/33829"
+python save_naver_cafe_post.py --url "https://cafe.naver.com/yourcafe/123456"
 
 Edge 쿠키 사용:
 python save_naver_cafe_post.py --cookie-browser msedge

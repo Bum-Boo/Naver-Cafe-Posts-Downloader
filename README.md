@@ -41,7 +41,7 @@ python save_naver_cafe_post.py
 URL을 바로 넣어서 저장:
 
 ```bash
-python save_naver_cafe_post.py --url "https://cafe.naver.com/irelandprestigeuhak/33829"
+python save_naver_cafe_post.py --url "https://cafe.naver.com/yourcafe/123456"
 ```
 
 Edge에 로그인된 쿠키를 쓰려면:
