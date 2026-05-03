@@ -105,6 +105,7 @@ class ParsedCafeUrl:
 
 @dataclass
 class ExtractionResult:
+    # 추출 결과와 실제로 사용된 selector를 함께 보관해 디버그/메타데이터에서 원인을 추적하기 쉽게 합니다.
     title: str
     body_text: str
     body_html: str
@@ -379,6 +380,8 @@ def ensure_browser_cookie3_installed() -> None:
 def load_naver_cookies_from_browser(browser_name: str) -> list[dict[str, Any]]:
     ensure_browser_cookie3_installed()
 
+    # browser_cookie3가 평소 브라우저 프로필의 쿠키 저장소를 읽고 복호화합니다.
+    # Playwright 컨텍스트에 넣을 수 있도록 필요한 필드만 dict 형태로 변환합니다.
     if browser_name == "msedge":
         cookie_jar = browser_cookie3.edge(domain_name="naver.com")
     else:
@@ -409,6 +412,8 @@ def import_naver_cookies(context: BrowserContext, args: argparse.Namespace) -> N
         return
 
     try:
+        # 쿠키 읽기 실패는 치명 오류로 막지 않습니다.
+        # 사용자가 열린 브라우저에서 직접 로그인할 수 있도록 경고만 출력합니다.
         cookies = load_naver_cookies_from_browser(args.cookie_browser)
         if not cookies:
             warn(
@@ -576,6 +581,7 @@ def has_any_selector(target: TargetPage, selectors: Sequence[str]) -> bool:
 
 
 def is_login_or_access_issue(page: Page, target: TargetPage) -> bool:
+    # 로그인 페이지로 이동했거나, 본문/호스트 페이지에 권한 제한 문구가 보이면 재로그인 흐름으로 넘깁니다.
     if "nid.naver.com" in page.url.lower():
         return True
 
@@ -620,6 +626,7 @@ def looks_like_access_limited_text(text: str) -> bool:
 
 
 def extract_title(target: TargetPage, parsed_url: ParsedCafeUrl) -> tuple[str, str]:
+    # 제목 selector가 실패하면 브라우저 title을 사용하고, 그것도 부적절하면 URL 정보로 안전한 폴더명을 만듭니다.
     for selector in TITLE_SELECTORS:
         locator = target.locator(selector).first
         try:
@@ -665,6 +672,7 @@ def build_fallback_title(parsed_url: ParsedCafeUrl) -> str:
 
 
 def extract_body_container(target: TargetPage) -> tuple[Locator, str]:
+    # body fallback은 마지막 수단입니다. 로그인/권한 안내 페이지를 본문으로 저장하지 않도록 한 번 더 걸러냅니다.
     for selector in BODY_SELECTORS:
         locator = target.locator(selector).first
         try:
@@ -1013,6 +1021,8 @@ def wrap_manual_html(raw_html: str, base_url: str) -> str:
 
 
 def resolve_saved_image_reference(candidate: str, html_path: Path, base_url: str) -> Optional[str]:
+    # Ctrl+S 저장 HTML은 이미지 경로가 로컬 파일, file:// URL, 상대 경로, 원격 URL로 섞일 수 있습니다.
+    # 다운로드/복사 단계에서 동일하게 처리할 수 있도록 실제 로컬 경로나 절대 URL로 정규화합니다.
     candidate = candidate.strip()
     if not candidate:
         return None
@@ -1227,6 +1237,7 @@ def run_current_browser_mode(args: argparse.Namespace) -> int:
 
 
 def build_debug_info(page: Page, error_message: str) -> dict[str, Any]:
+    # 실패 시 현재 URL, iframe 목록, 시도한 selector를 남겨 네이버 DOM 변경 여부를 빠르게 확인합니다.
     frames = list_frames(page)
     target, used_iframe, iframe_name = get_cafe_article_frame_or_page(page, announce=False)
     return {
@@ -1242,6 +1253,7 @@ def build_debug_info(page: Page, error_message: str) -> dict[str, Any]:
 
 
 def extract_current_post(page: Page, parsed_url: ParsedCafeUrl, access_status: str) -> ExtractionResult:
+    # 자동화 모드의 핵심 추출 단계입니다. iframe 탐지, 본문 대기, 텍스트/HTML/이미지 후보 수집을 한 번에 수행합니다.
     target, used_iframe, iframe_name = get_cafe_article_frame_or_page(page)
     info(f"iframe \uc0ac\uc6a9 \uc5ec\ubd80: {str(used_iframe).lower()}")
 
@@ -1278,6 +1290,8 @@ def load_and_extract(page: Page, parsed_url: ParsedCafeUrl) -> ExtractionResult:
     try:
         return extract_current_post(page, parsed_url, "accessible")
     except Exception as first_error:
+        # 첫 추출 실패가 로그인/권한 문제로 보일 때만 사용자 로그인 후 재시도합니다.
+        # selector 변경 같은 일반 추출 오류는 원래 예외를 유지해야 디버그가 쉬워집니다.
         target, _, _ = get_cafe_article_frame_or_page(page)
         if not is_login_or_access_issue(page, target):
             raise first_error
@@ -1301,6 +1315,7 @@ def build_meta(
     image_files: Sequence[str],
     failed_images: Sequence[dict[str, str]],
 ) -> dict[str, Any]:
+    # meta.json은 저장 결과 검증용입니다. 어떤 URL/selector/권한 상태에서 저장됐는지 함께 남깁니다.
     return {
         "source_url": parsed_url.original_url,
         "final_url": result.final_url,
