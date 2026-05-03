@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+
+# 로컬 실행 중 생성되는 브라우저 프로필에는 쿠키/세션 정보가 들어갈 수 있습니다.
+browser_profile/
+
+# 다운로드 결과와 디버그 산출물은 실행 환경마다 달라지는 출력물입니다.
+saved_posts/
+
+# OS/편집기 임시 파일
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

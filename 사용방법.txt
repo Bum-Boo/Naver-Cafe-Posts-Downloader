@@ -1,0 +1,67 @@
+네이버 카페 게시글 저장 도구 사용방법
+
+가장 쉬운 방법: URL만 붙여넣기
+
+1. 평소 쓰는 Chrome에서 네이버에 로그인되어 있는지 확인합니다.
+
+2. 이 폴더에 있는 실행하기.bat 파일을 더블클릭합니다.
+
+3. 처음 한 번만 1번 "First install"을 실행합니다.
+
+4. 메뉴에서 2번 "Save cafe post"를 실행합니다.
+
+5. 터미널에 네이버 카페 게시글 URL을 붙여넣고 Enter를 누릅니다.
+
+6. 도구가 평소 Chrome에 저장된 네이버 로그인 쿠키를 가져와서 게시글을 열고 저장합니다.
+
+7. 저장이 완료되면 saved_posts 폴더 아래에 게시글 제목으로 된 폴더가 생깁니다.
+
+저장되는 파일
+
+- content.txt
+- content.html
+- meta.json
+- images 폴더
+
+다음부터 실행할 때
+
+처음 설치는 다시 하지 않아도 됩니다.
+보통은 실행하기.bat를 열고 2번 "Save cafe post"만 누르면 됩니다.
+
+중요 안내
+
+현재 열려 있는 Chrome 창을 프로그램이 직접 조종하는 것은 브라우저 보안상 어렵습니다.
+대신 이 도구는 평소 Chrome에 저장된 네이버 로그인 쿠키를 읽어서 자동 저장 브라우저에 적용합니다.
+그래서 사용자는 URL만 붙여넣으면 되고, 네이버 로그인을 매번 다시 할 필요가 없도록 구성했습니다.
+
+Edge에 로그인되어 있는 쿠키를 쓰고 싶을 때
+
+아래 명령어로 실행합니다.
+python save_naver_cafe_post.py --cookie-browser msedge
+
+수동 HTML 저장 방식이 필요할 때
+
+자동 저장이 실패할 때만 실행하기.bat에서 3번 "Manual HTML save"를 사용합니다.
+이 방식은 브라우저에서 Ctrl+S로 저장한 HTML 파일을 도구가 정리하는 예비 방식입니다.
+
+직접 명령어로 실행하고 싶을 때
+
+설치:
+pip install -r requirements.txt
+python -m playwright install chromium
+
+URL 입력 방식:
+python save_naver_cafe_post.py
+
+URL을 바로 넣어서 저장:
+python save_naver_cafe_post.py --url "https://cafe.naver.com/irelandprestigeuhak/33829"
+
+Edge 쿠키 사용:
+python save_naver_cafe_post.py --cookie-browser msedge
+
+쿠키 가져오기를 끄고 실행:
+python save_naver_cafe_post.py --no-cookie-import
+
+추출이 실패했을 때
+
+saved_posts/_debug 폴더를 확인합니다.
