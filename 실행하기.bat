@@ -8,19 +8,17 @@ if errorlevel 1 set "PY_CMD=py"
 
 :menu
 cls
-echo NAVER CAFE POST SAVER
+echo NAVER CAFE ARCHIVE MANAGER
 echo.
 echo 1. First install
-echo 2. Save cafe post
-echo 3. Manual HTML save
-echo 4. Exit
+echo 2. Open archive app
+echo 3. Exit
 echo.
 set /p choice=Select number: 
 
 if "%choice%"=="1" goto install
-if "%choice%"=="2" goto save
-if "%choice%"=="3" goto manual_html_save
-if "%choice%"=="4" goto end
+if "%choice%"=="2" goto open_app
+if "%choice%"=="3" goto end
 
 echo.
 echo Invalid choice.
@@ -41,20 +39,11 @@ echo Install complete.
 pause
 goto menu
 
-:save
+:open_app
 cls
-echo Paste URL only. The tool will use Naver cookies from your normal browser.
+echo Opening archive app...
 echo.
-%PY_CMD% save_naver_cafe_post.py
-pause
-goto menu
-
-:manual_html_save
-cls
-echo This backup mode opens the URL in your normal browser.
-echo After the page opens, save it with Ctrl+S, then paste the saved HTML path.
-echo.
-%PY_CMD% save_naver_cafe_post.py --manual-html
+%PY_CMD% app.py
 pause
 goto menu
 

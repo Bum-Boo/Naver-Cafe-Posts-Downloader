@@ -1,115 +1,94 @@
-# Naver Cafe Posts Downloader 1
+# 네이버 카페 아카이브 매니저
 
-네이버 카페 게시글을 로컬 파일로 저장하는 Windows용 Python 도구입니다.
+네이버 카페 게시글을 로컬에 저장하고, 저장된 글을 목록으로 관리하는 간단한 Python 데스크톱 앱입니다.
 
-게시글 URL을 입력하면 본문 텍스트, HTML, 이미지, 저장 메타데이터를 `saved_posts` 폴더에 정리해서 저장합니다. 평소 사용하는 Chrome 또는 Edge의 네이버 로그인 쿠키를 가져와 적용하므로, 이미 브라우저에서 네이버에 로그인되어 있다면 자동 저장 브라우저에서 다시 로그인하지 않아도 됩니다.
+이 앱은 네이버 블로그가 아니라 네이버 카페 게시글만 대상으로 합니다. 사용자가 직접 로그인한 네이버 세션으로 볼 수 있는 글만 저장하며, 접근 제한을 우회하지 않습니다.
 
-## 주요 기능
+## 설치
 
-- 네이버 카페 게시글 1개 저장
-- 게시글 제목, 본문 텍스트, 본문 HTML 추출
-- 본문 이미지 다운로드
-- Chrome 또는 Edge 로그인 쿠키 사용
-- 접근 권한 또는 로그인 필요 시 브라우저에서 로그인 후 재시도
-- 자동 저장 실패 시 수동 HTML 저장 모드 제공
-- 실패 원인 확인용 디버그 파일 저장
+Python 3.11 이상을 권장합니다.
 
-## 요구 사항
+```bash
+pip install -r requirements.txt
+```
 
-- Windows
-- Python 3.10 이상 권장
-- Chrome 또는 Microsoft Edge
-- 네이버 카페 게시글을 볼 수 있는 계정
+Playwright Chromium을 설치합니다.
 
-## 빠른 시작
+```bash
+python -m playwright install chromium
+```
 
-1. 평소 사용하는 Chrome에서 네이버에 로그인합니다.
-2. 이 폴더의 `실행하기.bat`를 더블클릭합니다.
-3. 처음 한 번만 `1. First install`을 실행합니다.
-4. 설치가 끝나면 `2. Save cafe post`를 선택합니다.
-5. 저장할 네이버 카페 게시글 URL을 붙여넣고 Enter를 누릅니다.
+## 실행
 
-저장이 완료되면 `saved_posts` 폴더 아래에 게시글 제목으로 된 폴더가 생성됩니다.
+```bash
+python app.py
+```
 
-## GPT에서 불러오기
+## 처음 사용
 
-ChatGPT나 다른 도구에서 GitHub 페이지를 바로 읽지 못하면 아래 주소를 사용하세요.
+1. 앱을 실행합니다.
+2. `네이버 로그인 세션 연결` 버튼을 누릅니다.
+3. 열린 Chromium 브라우저에서 네이버에 직접 로그인합니다.
+4. 앱 상태 표시줄에 `로그인 세션이 저장되었습니다` 메시지가 뜰 때까지 기다립니다.
+5. 앱으로 돌아와 네이버 카페 게시글 URL을 붙여넣습니다.
+6. `Download` 버튼을 누릅니다.
 
-- Repository: `https://github.com/Bum-Boo/Naver-Cafe-Posts-Downloader`
-- ZIP: `https://github.com/Bum-Boo/Naver-Cafe-Posts-Downloader/archive/refs/heads/main.zip`
-- Raw README: `https://raw.githubusercontent.com/Bum-Boo/Naver-Cafe-Posts-Downloader/refs/heads/main/README.md`
+로그인 세션은 1차로 `./data/browser_profile`에 저장되고, 보조 인증 상태는 `./data/auth/naver_state.json`에 저장됩니다. 다음 실행부터는 같은 세션으로 글을 다운로드합니다.
 
-일부 도구는 한글 파일명을 제대로 처리하지 못할 수 있어, 같은 사용 설명을 `USAGE.md`에도 제공합니다.
+일부 네이버 인증 화면은 백그라운드 브라우저를 다시 인증 대상으로 볼 수 있습니다. 이 경우 앱이 같은 세션으로 보이는 Chromium을 한 번 더 열어 확인한 뒤 다운로드를 계속 시도합니다.
 
-## 저장 결과
+## 게시글 저장
 
-각 게시글은 별도 폴더에 저장됩니다.
+지원하는 URL 형식:
+
+- `https://cafe.naver.com/{cafeName}/{articleId}`
+- `https://cafe.naver.com/ArticleRead.nhn?clubid={clubId}&articleid={articleId}`
+- `https://cafe.naver.com/ca-fe/cafes/{clubId}/articles/{articleId}`
+- `https://m.cafe.naver.com/ca-fe/web/cafes/{clubId}/articles/{articleId}`
+
+저장 결과는 `./saved_posts/` 아래에 게시글 제목으로 된 폴더로 생성됩니다.
 
 ```text
 saved_posts/
-  게시글 제목/
+  Safe_Post_Title/
     content.txt
     content.html
+    view.html
     meta.json
     images/
       001.jpg
       002.png
 ```
 
-- `content.txt`: 본문 텍스트
-- `content.html`: 본문 HTML
-- `meta.json`: 원본 URL, 최종 URL, 저장 시간, 이미지 목록 등
-- `images`: 본문 이미지 파일
+## 저장된 글 보기
 
-## 명령어로 실행
+1. 왼쪽 목록에서 저장된 게시글을 클릭합니다.
+2. 오른쪽에서 제목, 원본 URL, 저장일, 이미지 수, 폴더 경로를 확인합니다.
+3. `Open Local Page`를 누르면 `view.html`이 기본 브라우저에서 열립니다.
+4. `Open Folder`를 누르면 저장 폴더가 열립니다.
+5. `Delete Archive`를 누르면 확인 후 저장 폴더와 목록 항목을 삭제합니다.
 
-설치:
+`view.html`은 저장된 본문과 로컬 이미지로 구성되어 오프라인에서도 볼 수 있습니다.
 
-```bash
-pip install -r requirements.txt
-python -m playwright install chromium
-```
+상단의 세션 상태 표시에서 네이버 로그인 세션이 적용 중인지 확인할 수 있습니다.
 
-URL을 실행 중에 입력:
+## 데이터 파일
 
-```bash
-python save_naver_cafe_post.py
-```
-
-URL을 바로 지정:
-
-```bash
-python save_naver_cafe_post.py --url "https://cafe.naver.com/yourcafe/123456"
-```
-
-Edge에 저장된 로그인 쿠키 사용:
-
-```bash
-python save_naver_cafe_post.py --cookie-browser msedge
-```
-
-쿠키 가져오기 없이 실행:
-
-```bash
-python save_naver_cafe_post.py --no-cookie-import
-```
-
-## 수동 HTML 저장 모드
-
-자동 저장이 실패하면 `실행하기.bat`에서 `3. Manual HTML save`를 사용합니다.
-
-이 모드는 평소 사용하는 브라우저에서 게시글을 열고, 사용자가 `Ctrl+S`로 저장한 HTML 파일을 도구가 다시 읽어서 같은 형식으로 정리합니다.
+- `data/archive_index.json`: 저장된 게시글 목록
+- `data/auth/naver_state.json`: 저장된 브라우저 쿠키/세션 상태
+- `saved_posts/`: 게시글 본문, HTML, 이미지, 메타데이터
+- `data/browser_profile/`: 네이버 로그인 세션이 저장되는 Chromium 프로필
 
 ## 문제 해결
 
-로그인이 필요하다는 메시지가 나오면 열린 브라우저에서 네이버 로그인 또는 카페 접근을 완료한 뒤 터미널에서 Enter를 누릅니다.
+다운로드 중 아래 메시지가 나오면 `네이버 로그인 세션 연결`을 먼저 실행하세요.
 
-게시글을 볼 수 없다는 메시지가 나오면 해당 계정이 카페에 가입되어 있는지, 게시판 열람 권한이 있는지 확인합니다.
+```text
+네이버 로그인 세션이 만료되었거나 카페 접근 권한 확인이 필요합니다. [네이버 로그인 세션 연결]을 다시 실행해주세요.
+```
 
-추출에 실패하면 `saved_posts/_debug` 폴더의 파일을 확인합니다.
+추출에 실패하면 `saved_posts/_debug/` 폴더에 아래 파일이 생성됩니다.
 
-## 주의 사항
-
-이 도구는 사용자가 열람 권한을 가진 게시글을 개인적으로 저장하기 위한 도구입니다. 저장한 콘텐츠의 이용과 재배포는 해당 카페와 게시글의 권리 및 정책을 따라야 합니다.
-
-`browser_profile` 폴더에는 로컬 브라우저 세션 정보가 포함될 수 있습니다. 다른 사람에게 공유하거나 공개 저장소에 올리지 마세요.
+- `debug_screenshot.png`
+- `debug_page.html`
+- `debug_info.json`
