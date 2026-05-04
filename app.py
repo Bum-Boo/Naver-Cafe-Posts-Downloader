@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -12,20 +13,24 @@ from PySide6.QtCore import QThread, Qt, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
+    QComboBox,
+    QDialog,
     QFormLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QListWidget,
-    QListWidgetItem,
     QMainWindow,
     QMessageBox,
+    QInputDialog,
     QPushButton,
+    QProgressBar,
     QSizePolicy,
     QSplitter,
     QStatusBar,
     QTextBrowser,
     QTextEdit,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -34,12 +39,34 @@ from PySide6.QtCore import QUrl
 from downloader.naver_cafe_downloader import (
     SESSION_EXPIRED_MESSAGE,
     AccessRequiredError,
+    BatchDownloadResult,
     DownloadCancelledError,
     check_saved_session,
-    download_post,
+    download_menu_posts,
+    download_single_post,
+    parse_naver_cafe_url_type,
+    sanitize_filename,
     setup_login_session,
 )
-from storage.archive_index import load_archive_index, make_index_entry, remove_archive_entry, upsert_archive_entry
+from storage.archive_index import (
+    has_article_key,
+    load_archive_index,
+    make_article_key,
+    make_index_entry,
+    remove_archive_entries,
+    remove_archive_entry,
+    update_archive_entries_paths,
+    update_archive_entry_paths,
+    upsert_archive_entry,
+)
+
+
+DOWNLOAD_MODE_AUTO = "자동 감지"
+DOWNLOAD_MODE_SINGLE = "개별 게시글 다운로드"
+DOWNLOAD_MODE_MENU = "메뉴 전체 다운로드"
+FILTER_ALL = "전체 보기"
+FILTER_SINGLE = "개별 다운로드만"
+FILTER_MENU = "메뉴 다운로드만"
 
 
 def open_path(path: str) -> bool:
@@ -71,7 +98,76 @@ def can_delete_archive_folder(path: str) -> bool:
         target.relative_to(archive_root)
     except ValueError:
         return False
+    # Folder management actions are intentionally limited to saved_posts so a
+    # bad index entry cannot rename or delete an arbitrary user folder.
     return target.exists() and target.is_dir() and target != archive_root
+
+
+def can_manage_archive_folder(path: str) -> bool:
+    return can_delete_archive_folder(path)
+
+
+def read_json_file(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def write_json_file(path: Path, data: dict[str, Any]) -> None:
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def update_post_meta_paths(folder_path: Path, local_view_path: Path) -> None:
+    # Rename operations move folders after download, so stored paths in meta
+    # need to follow the actual folder location.
+    meta_path = folder_path / "meta.json"
+    meta = read_json_file(meta_path)
+    if not meta:
+        return
+    meta["folder_path"] = str(folder_path.resolve())
+    meta["local_view_path"] = str(local_view_path.resolve())
+    write_json_file(meta_path, meta)
+
+
+def infer_download_type(post: dict[str, Any]) -> str:
+    explicit = str(post.get("download_type") or "").strip()
+    if explicit:
+        return explicit
+    if post.get("source_menu_url") or post.get("menu_id") or post.get("batch_id"):
+        return "menu_batch"
+    return "single_post"
+
+
+def batch_summary_path(batch_id: str) -> Path:
+    return Path("./data/batches") / f"{batch_id}.json"
+
+
+def load_batch_summary(batch_id: str) -> dict[str, Any]:
+    if not batch_id:
+        return {}
+    path = batch_summary_path(batch_id)
+    if not path.exists():
+        return {}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def derive_menu_folder_path(posts: list[dict[str, Any]], summary: dict[str, Any]) -> str:
+    summary_folder = str(summary.get("menu_folder_path") or "")
+    if summary_folder:
+        return summary_folder
+    for post in posts:
+        folder_path = str(post.get("folder_path") or "")
+        if folder_path:
+            return str(Path(folder_path).parent)
+    return ""
 
 
 def make_value_label() -> QLabel:
@@ -102,8 +198,105 @@ def make_preview_browser() -> QTextBrowser:
     return preview
 
 
-class DownloadWorker(QThread):
-    progress = Signal(str)
+class ProgressDialog(QDialog):
+    # A single dialog is reused by both single-post and menu batch workers. The
+    # worker only emits Qt signals; all UI updates stay on the main thread.
+    cancel_requested = Signal()
+
+    def __init__(self, title: str, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.resize(560, 360)
+        self._running = True
+
+        self.message_label = QLabel("다운로드 준비 중...")
+        self.message_label.setWordWrap(True)
+        self.progress_bar = QProgressBar()
+        self.log_box = QTextEdit()
+        self.log_box.setReadOnly(True)
+        self.cancel_button = QPushButton("취소")
+        self.close_button = QPushButton("닫기")
+        self.close_button.setEnabled(False)
+
+        button_layout = QHBoxLayout()
+        button_layout.addStretch(1)
+        button_layout.addWidget(self.cancel_button)
+        button_layout.addWidget(self.close_button)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(self.message_label)
+        layout.addWidget(self.progress_bar)
+        layout.addWidget(self.log_box, 1)
+        layout.addLayout(button_layout)
+
+        self.cancel_button.clicked.connect(self.request_cancel)
+        self.close_button.clicked.connect(self.accept)
+        self.set_indeterminate()
+
+    def set_message(self, text: str) -> None:
+        self.message_label.setText(text)
+
+    def append_log(self, text: str) -> None:
+        self.log_box.append(text)
+        scrollbar = self.log_box.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum())
+
+    def set_indeterminate(self) -> None:
+        self.progress_bar.setRange(0, 0)
+
+    def set_progress(self, current: int, total: int) -> None:
+        if total <= 0:
+            self.set_indeterminate()
+            return
+        self.progress_bar.setRange(0, total)
+        self.progress_bar.setValue(max(0, min(current, total)))
+
+    def request_cancel(self) -> None:
+        if not self._running:
+            return
+        self.cancel_button.setEnabled(False)
+        self.set_message("취소 요청을 처리하는 중...")
+        self.append_log("취소 요청을 처리하는 중...")
+        self.cancel_requested.emit()
+
+    def finish(self, message: str) -> None:
+        self._running = False
+        self.set_message(message)
+        self.append_log(message)
+        self.cancel_button.setEnabled(False)
+        self.close_button.setEnabled(True)
+
+    def mark_completed(self, message: str) -> None:
+        self.finish(message)
+
+    def mark_failed(self, message: str) -> None:
+        self.finish(message)
+
+    def mark_cancelled(self, message: str) -> None:
+        self.finish(message)
+
+    def closeEvent(self, event: Any) -> None:
+        if not self._running:
+            super().closeEvent(event)
+            return
+
+        answer = QMessageBox.question(
+            self,
+            "다운로드 취소",
+            "다운로드가 진행 중입니다. 취소하시겠습니까?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer == QMessageBox.Yes:
+            self.request_cancel()
+        event.ignore()
+
+
+class SinglePostDownloadWorker(QThread):
+    # Single post downloads can block on Playwright/network work. Running them
+    # in a worker keeps the PySide UI responsive and enables cooperative cancel.
+    progress_message = Signal(str)
+    progress_value = Signal(int, int)
     duplicate_folder_found = Signal(str, str)
     completed = Signal(dict)
     failed = Signal(str)
@@ -114,6 +307,18 @@ class DownloadWorker(QThread):
         self.url = url
         self._duplicate_event: Optional[threading.Event] = None
         self._duplicate_decision = False
+        self._cancel_requested = False
+
+    def request_cancel(self) -> None:
+        self._cancel_requested = True
+        if self._duplicate_event is not None:
+            # If the worker is waiting for the duplicate-folder confirmation
+            # dialog, cancellation should release that wait immediately.
+            self._duplicate_decision = False
+            self._duplicate_event.set()
+
+    def is_cancel_requested(self) -> bool:
+        return self._cancel_requested
 
     def confirm_existing_folder(self, folder: Path, title: str) -> bool:
         self._duplicate_decision = False
@@ -129,9 +334,11 @@ class DownloadWorker(QThread):
 
     def run(self) -> None:
         try:
-            meta = download_post(
+            meta = download_single_post(
                 self.url,
-                progress=self.progress.emit,
+                progress=self.progress_message.emit,
+                progress_value=self.progress_value.emit,
+                should_cancel=self.is_cancel_requested,
                 confirm_existing_folder=self.confirm_existing_folder,
             )
             self.completed.emit(meta)
@@ -141,6 +348,43 @@ class DownloadWorker(QThread):
             self.failed.emit(str(exc))
         except Exception as exc:
             self.failed.emit(f"다운로드 실패: {exc}")
+
+
+class BatchDownloadWorker(QThread):
+    # Menu downloads reuse the downloader's batch flow. Progress is reported as
+    # both text logs and numeric values once the total post count is known.
+    progress_message = Signal(str)
+    progress_value = Signal(int, int)
+    completed = Signal(dict)
+    failed = Signal(str)
+    cancelled = Signal(str)
+
+    def __init__(self, url: str) -> None:
+        super().__init__()
+        self.url = url
+        self._cancel_requested = False
+
+    def request_cancel(self) -> None:
+        self._cancel_requested = True
+
+    def is_cancel_requested(self) -> bool:
+        return self._cancel_requested
+
+    def run(self) -> None:
+        try:
+            result = download_menu_posts(
+                self.url,
+                progress=self.progress_message.emit,
+                progress_value=self.progress_value.emit,
+                should_cancel=self.is_cancel_requested,
+            )
+            self.completed.emit(result.__dict__.copy())
+        except DownloadCancelledError as exc:
+            self.cancelled.emit(str(exc))
+        except AccessRequiredError as exc:
+            self.failed.emit(str(exc))
+        except Exception as exc:
+            self.failed.emit(f"메뉴 다운로드 실패: {exc}")
 
 
 class LoginWorker(QThread):
@@ -173,32 +417,55 @@ class MainWindow(QMainWindow):
 
         self.posts: list[dict[str, Any]] = []
         self.selected_post: Optional[dict[str, Any]] = None
-        self.download_worker: Optional[DownloadWorker] = None
+        self.selected_group: Optional[dict[str, Any]] = None
+        self.download_worker: Optional[SinglePostDownloadWorker] = None
+        self.batch_worker: Optional[BatchDownloadWorker] = None
         self.login_worker: Optional[LoginWorker] = None
         self.session_check_worker: Optional[SessionCheckWorker] = None
         self.session_check_dialog: Optional[QMessageBox] = None
+        self.progress_dialog: Optional[ProgressDialog] = None
 
+        self.mode_selector = QComboBox()
+        self.mode_selector.addItems([DOWNLOAD_MODE_AUTO, DOWNLOAD_MODE_SINGLE, DOWNLOAD_MODE_MENU])
         self.url_input = QLineEdit()
         self.url_input.setPlaceholderText("네이버 카페 게시글 URL을 붙여넣으세요")
-        self.download_button = QPushButton("Download")
+        self.download_button = QPushButton("다운로드")
         self.login_button = QPushButton("네이버 로그인 세션 연결")
         self.session_status_label = QLabel("세션 상태: 확인 중")
         self.session_status_label.setMinimumWidth(180)
 
         top_layout = QHBoxLayout()
+        top_layout.addWidget(self.mode_selector)
         top_layout.addWidget(self.url_input, 1)
         top_layout.addWidget(self.download_button)
         top_layout.addWidget(self.login_button)
         top_layout.addWidget(self.session_status_label)
 
-        self.post_list = QListWidget()
-        self.post_list.setMinimumWidth(300)
+        self.list_filter = QComboBox()
+        self.list_filter.addItems([FILTER_ALL, FILTER_SINGLE, FILTER_MENU])
+        self.post_tree = QTreeWidget()
+        self.post_tree.setHeaderHidden(True)
+        self.post_tree.setMinimumWidth(320)
+        # The tree keeps old single-post archives visible while grouping newer
+        # menu batch downloads by menu/batch metadata.
+        left_panel = QWidget()
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.addWidget(QLabel("목록 필터"))
+        left_layout.addWidget(self.list_filter)
+        left_layout.addWidget(self.post_tree, 1)
 
         self.title_value = make_value_label()
         self.source_url_value = make_readonly_text_box()
         self.saved_at_value = make_value_label()
         self.image_count_value = make_value_label()
         self.folder_path_value = make_readonly_text_box()
+        self.download_type_value = make_value_label()
+        self.menu_title_value = make_value_label()
+        self.menu_id_value = make_value_label()
+        self.source_menu_url_value = make_readonly_text_box()
+        self.batch_id_value = make_value_label()
+        self.total_posts_value = make_value_label()
+        self.batch_counts_value = make_value_label()
 
         details_layout = QFormLayout()
         details_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
@@ -207,11 +474,19 @@ class MainWindow(QMainWindow):
         details_layout.addRow("saved date", self.saved_at_value)
         details_layout.addRow("image count", self.image_count_value)
         details_layout.addRow("local folder", self.folder_path_value)
+        details_layout.addRow("download type", self.download_type_value)
+        details_layout.addRow("menu title", self.menu_title_value)
+        details_layout.addRow("menu id", self.menu_id_value)
+        details_layout.addRow("source menu URL", self.source_menu_url_value)
+        details_layout.addRow("batch id", self.batch_id_value)
+        details_layout.addRow("total posts", self.total_posts_value)
+        details_layout.addRow("batch counts", self.batch_counts_value)
         details_panel = QWidget()
         details_panel.setLayout(details_layout)
 
         self.open_page_button = QPushButton("Open Local Page")
         self.open_folder_button = QPushButton("Open Folder")
+        self.rename_folder_button = QPushButton("Rename Folder")
         self.delete_button = QPushButton("Delete Archive")
         self.refresh_button = QPushButton("Refresh List")
         self.preview_browser = make_preview_browser()
@@ -219,6 +494,7 @@ class MainWindow(QMainWindow):
         side_button_layout = QVBoxLayout()
         side_button_layout.addWidget(self.open_page_button)
         side_button_layout.addWidget(self.open_folder_button)
+        side_button_layout.addWidget(self.rename_folder_button)
         side_button_layout.addWidget(self.delete_button)
         side_button_layout.addWidget(self.refresh_button)
         side_button_layout.addStretch(1)
@@ -243,7 +519,7 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(right_splitter, 1)
 
         splitter = QSplitter()
-        splitter.addWidget(self.post_list)
+        splitter.addWidget(left_panel)
         splitter.addWidget(right_panel)
         splitter.setChildrenCollapsible(False)
         splitter.setStretchFactor(0, 1)
@@ -259,28 +535,123 @@ class MainWindow(QMainWindow):
 
         self.download_button.clicked.connect(self.start_download)
         self.url_input.returnPressed.connect(self.start_download)
+        self.url_input.textChanged.connect(self.update_download_button_text)
+        self.mode_selector.currentTextChanged.connect(lambda _text: self.update_download_button_text(self.url_input.text()))
+        self.list_filter.currentTextChanged.connect(lambda _text: self.refresh_posts())
         self.login_button.clicked.connect(self.start_login_setup)
         self.refresh_button.clicked.connect(self.refresh_posts)
         self.open_page_button.clicked.connect(self.open_selected_page)
         self.open_folder_button.clicked.connect(self.open_selected_folder)
+        self.rename_folder_button.clicked.connect(self.rename_selected_folder)
         self.delete_button.clicked.connect(self.delete_selected_archive)
-        self.post_list.currentItemChanged.connect(self.handle_selection_changed)
+        self.post_tree.currentItemChanged.connect(self.handle_selection_changed)
 
         self.refresh_posts()
+        self.update_download_button_text(self.url_input.text())
+        self.show_post_details(None)
         self.start_session_check()
 
     def set_busy(self, busy: bool) -> None:
         self.download_button.setDisabled(busy)
         self.login_button.setDisabled(busy)
 
+    def show_progress_dialog(self, title: str, worker: SinglePostDownloadWorker | BatchDownloadWorker) -> ProgressDialog:
+        if self.progress_dialog is not None:
+            self.progress_dialog.close()
+
+        dialog = ProgressDialog(title, self)
+        dialog.cancel_requested.connect(worker.request_cancel)
+        self.progress_dialog = dialog
+        dialog.show()
+        return dialog
+
+    def handle_progress_message(self, message: str) -> None:
+        self.statusBar().showMessage(message)
+        if self.progress_dialog is not None:
+            self.progress_dialog.set_message(message)
+            self.progress_dialog.append_log(message)
+
+    def handle_progress_value(self, current: int, total: int) -> None:
+        if self.progress_dialog is not None:
+            self.progress_dialog.set_progress(current, total)
+
     def refresh_posts(self) -> None:
         self.posts = load_archive_index()
-        self.post_list.clear()
+        self.post_tree.clear()
+        current_filter = self.list_filter.currentText()
+
+        single_root = QTreeWidgetItem(["개별 다운로드"])
+        menu_root = QTreeWidgetItem(["메뉴 다운로드"])
+        single_root.setData(0, Qt.UserRole, {"kind": "root"})
+        menu_root.setData(0, Qt.UserRole, {"kind": "root"})
+
+        if current_filter in {FILTER_ALL, FILTER_SINGLE}:
+            self.post_tree.addTopLevelItem(single_root)
+        if current_filter in {FILTER_ALL, FILTER_MENU}:
+            self.post_tree.addTopLevelItem(menu_root)
+
+        menu_groups: dict[str, dict[str, Any]] = {}
         for post in self.posts:
-            item = QListWidgetItem(post.get("title") or "(제목 없음)")
-            item.setData(Qt.UserRole, post)
-            self.post_list.addItem(item)
+            download_type = infer_download_type(post)
+            post = {**post, "download_type": download_type}
+            if download_type == "menu_batch":
+                key = str(post.get("batch_id") or post.get("source_menu_url") or post.get("menu_id") or "menu")
+                group = menu_groups.setdefault(
+                    key,
+                    {
+                        "posts": [],
+                        "menu_title": post.get("menu_title"),
+                        "menu_id": post.get("menu_id"),
+                        "source_menu_url": post.get("source_menu_url"),
+                        "batch_id": post.get("batch_id"),
+                    },
+                )
+                group["posts"].append(post)
+                for field in ("menu_title", "menu_id", "source_menu_url", "batch_id"):
+                    if not group.get(field) and post.get(field):
+                        group[field] = post.get(field)
+            elif current_filter in {FILTER_ALL, FILTER_SINGLE}:
+                title = str(post.get("title") or "(제목 없음)")
+                item = QTreeWidgetItem([title])
+                item.setData(0, Qt.UserRole, {"kind": "post", "post": post})
+                single_root.addChild(item)
+
+        if current_filter in {FILTER_ALL, FILTER_MENU}:
+            for group in menu_groups.values():
+                posts = group["posts"]
+                summary = load_batch_summary(str(group.get("batch_id") or ""))
+                label_base = str(group.get("menu_title") or group.get("menu_id") or "메뉴")
+                saved_at = str(summary.get("completed_at") or posts[0].get("saved_at") or "")
+                label = f"{label_base} / {saved_at[:19]}" if saved_at else label_base
+                group_data = {
+                    "kind": "menu_group",
+                    "menu_title": group.get("menu_title"),
+                    "menu_id": group.get("menu_id"),
+                    "source_menu_url": group.get("source_menu_url"),
+                    "batch_id": group.get("batch_id"),
+                    "posts": posts,
+                    "summary": summary,
+                    "folder_path": derive_menu_folder_path(posts, summary),
+                }
+                group_item = QTreeWidgetItem([label])
+                group_item.setData(0, Qt.UserRole, group_data)
+                menu_root.addChild(group_item)
+                for post in posts:
+                    item = QTreeWidgetItem([str(post.get("title") or "(제목 없음)")])
+                    item.setData(0, Qt.UserRole, {"kind": "post", "post": post})
+                    group_item.addChild(item)
+
+        self.post_tree.expandAll()
         self.statusBar().showMessage(f"저장된 게시글 {len(self.posts)}개")
+
+    def update_download_button_text(self, url: str) -> None:
+        mode = self.mode_selector.currentText()
+        if mode == DOWNLOAD_MODE_SINGLE:
+            self.download_button.setText("개별 게시글 다운로드")
+        elif mode == DOWNLOAD_MODE_MENU:
+            self.download_button.setText("메뉴 전체 다운로드")
+        else:
+            self.download_button.setText("다운로드")
 
     def start_session_check(self) -> None:
         self.set_busy(True)
@@ -337,9 +708,24 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(message)
         self.finish_session_check_dialog("로그인 세션 확인 필요", message, False)
 
-    def handle_selection_changed(self, current: Optional[QListWidgetItem]) -> None:
-        self.selected_post = current.data(Qt.UserRole) if current else None
-        self.show_post_details(self.selected_post)
+    def handle_selection_changed(self, current: Optional[QTreeWidgetItem]) -> None:
+        data = current.data(0, Qt.UserRole) if current else None
+        if not isinstance(data, dict):
+            data = {}
+
+        kind = data.get("kind")
+        if kind == "post":
+            self.selected_post = data.get("post")
+            self.selected_group = None
+            self.show_post_details(self.selected_post)
+        elif kind == "menu_group":
+            self.selected_post = None
+            self.selected_group = data
+            self.show_menu_group_details(data)
+        else:
+            self.selected_post = None
+            self.selected_group = None
+            self.show_post_details(None)
 
     def show_post_details(self, post: Optional[dict[str, Any]]) -> None:
         if not post:
@@ -348,7 +734,18 @@ class MainWindow(QMainWindow):
             self.saved_at_value.setText("-")
             self.image_count_value.setText("-")
             self.folder_path_value.setPlainText("")
+            self.download_type_value.setText("-")
+            self.menu_title_value.setText("-")
+            self.menu_id_value.setText("-")
+            self.source_menu_url_value.setPlainText("")
+            self.batch_id_value.setText("-")
+            self.total_posts_value.setText("-")
+            self.batch_counts_value.setText("-")
             self.preview_browser.setHtml("<p style='color:#777;'>저장된 페이지 미리보기</p>")
+            self.open_page_button.setEnabled(False)
+            self.open_folder_button.setEnabled(False)
+            self.rename_folder_button.setEnabled(False)
+            self.delete_button.setEnabled(False)
             return
 
         self.title_value.setText(str(post.get("title") or "-"))
@@ -356,7 +753,43 @@ class MainWindow(QMainWindow):
         self.saved_at_value.setText(str(post.get("saved_at") or "-"))
         self.image_count_value.setText(str(post.get("image_count") or 0))
         self.folder_path_value.setPlainText(str(post.get("folder_path") or ""))
+        self.download_type_value.setText(str(infer_download_type(post)))
+        self.menu_title_value.setText(str(post.get("menu_title") or "-"))
+        self.menu_id_value.setText(str(post.get("menu_id") or "-"))
+        self.source_menu_url_value.setPlainText(str(post.get("source_menu_url") or ""))
+        self.batch_id_value.setText(str(post.get("batch_id") or "-"))
+        self.total_posts_value.setText("-")
+        self.batch_counts_value.setText("-")
         self.update_page_preview(str(post.get("local_view_path") or ""))
+        self.open_page_button.setEnabled(True)
+        self.open_folder_button.setEnabled(True)
+        self.rename_folder_button.setEnabled(True)
+        self.delete_button.setEnabled(True)
+
+    def show_menu_group_details(self, group: dict[str, Any]) -> None:
+        posts = group.get("posts") if isinstance(group.get("posts"), list) else []
+        summary = group.get("summary") if isinstance(group.get("summary"), dict) else {}
+        title = str(group.get("menu_title") or group.get("menu_id") or "메뉴 다운로드")
+        self.title_value.setText(title)
+        self.source_url_value.setPlainText("")
+        self.saved_at_value.setText(str(summary.get("completed_at") or "-"))
+        self.image_count_value.setText("-")
+        self.folder_path_value.setPlainText(str(group.get("folder_path") or ""))
+        self.download_type_value.setText("menu_batch")
+        self.menu_title_value.setText(str(group.get("menu_title") or "-"))
+        self.menu_id_value.setText(str(group.get("menu_id") or "-"))
+        self.source_menu_url_value.setPlainText(str(group.get("source_menu_url") or ""))
+        self.batch_id_value.setText(str(group.get("batch_id") or "-"))
+        self.total_posts_value.setText(str(summary.get("total_found") or len(posts)))
+        downloaded = summary.get("downloaded_count", len(posts))
+        skipped = summary.get("skipped_count", "-")
+        failed = summary.get("failed_count", "-")
+        self.batch_counts_value.setText(f"다운로드 {downloaded}, 스킵 {skipped}, 실패 {failed}")
+        self.preview_browser.setHtml("<p style='color:#777;'>메뉴 그룹에는 페이지 미리보기가 없습니다.</p>")
+        self.open_page_button.setEnabled(False)
+        self.open_folder_button.setEnabled(bool(group.get("folder_path")))
+        self.rename_folder_button.setEnabled(bool(group.get("folder_path")))
+        self.delete_button.setEnabled(bool(group.get("folder_path")))
 
     def update_page_preview(self, local_view_path: str) -> None:
         path = Path(local_view_path)
@@ -370,22 +803,81 @@ class MainWindow(QMainWindow):
             return
         if self.download_worker is not None and self.download_worker.isRunning():
             return
+        if self.batch_worker is not None and self.batch_worker.isRunning():
+            return
 
         url = self.url_input.text().strip()
         if not url:
             QMessageBox.warning(self, "입력 필요", "URL을 입력해주세요.")
             return
 
+        parsed = parse_naver_cafe_url_type(url)
+        mode = self.mode_selector.currentText()
+        # Mode validation happens before starting a worker so unsupported or
+        # mismatched URLs fail fast with a Korean UI message.
+        if parsed.url_type == "unsupported":
+            QMessageBox.warning(self, "지원하지 않는 URL", "지원하지 않는 네이버 카페 URL입니다.")
+            return
+        if mode == DOWNLOAD_MODE_SINGLE and parsed.url_type == "menu":
+            QMessageBox.warning(self, "모드 확인", "이 URL은 메뉴/게시판 URL입니다. 메뉴 전체 다운로드 모드를 선택해주세요.")
+            return
+        if mode == DOWNLOAD_MODE_MENU and parsed.url_type == "single_post":
+            QMessageBox.warning(self, "모드 확인", "이 URL은 개별 게시글 URL입니다. 개별 게시글 다운로드 모드를 선택해주세요.")
+            return
+
+        if parsed.url_type == "menu":
+            self.start_batch_download(url)
+            return
+
+        # Single-post mode checks article identity before download. Menu batch
+        # mode performs the same check internally and skips duplicates.
+        article_key = make_article_key(
+            club_id=parsed.club_id,
+            article_id=parsed.article_id,
+            cafe_name=parsed.cafe_name,
+            source_url=parsed.normalized_url,
+        )
+        if has_article_key(article_key):
+            answer = QMessageBox.question(
+                self,
+                "이미 저장된 게시글",
+                "이미 저장된 게시글입니다. 다시 다운로드할까요?",
+                QMessageBox.Ok | QMessageBox.Cancel,
+                QMessageBox.Cancel,
+            )
+            if answer != QMessageBox.Ok:
+                self.statusBar().showMessage("다운로드가 취소되었습니다.")
+                return
+
         self.set_busy(True)
-        self.statusBar().showMessage("네이버 카페 게시글을 다운로드하는 중...")
-        self.download_worker = DownloadWorker(url)
-        self.download_worker.progress.connect(self.statusBar().showMessage)
+        self.statusBar().showMessage("개별 게시글 다운로드 중...")
+        self.download_worker = SinglePostDownloadWorker(url)
+        dialog = self.show_progress_dialog("개별 게시글 다운로드 진행 중", self.download_worker)
+        dialog.set_indeterminate()
+        dialog.append_log("다운로드 준비 중...")
+        self.download_worker.progress_message.connect(self.handle_progress_message)
+        self.download_worker.progress_value.connect(self.handle_progress_value)
         self.download_worker.duplicate_folder_found.connect(self.handle_duplicate_folder_found)
         self.download_worker.completed.connect(self.handle_download_completed)
         self.download_worker.failed.connect(self.handle_download_failed)
         self.download_worker.cancelled.connect(self.handle_download_cancelled)
         self.download_worker.finished.connect(lambda: self.set_busy(False))
         self.download_worker.start()
+
+    def start_batch_download(self, url: str) -> None:
+        self.set_busy(True)
+        self.statusBar().showMessage("메뉴 전체 다운로드 중...")
+        self.batch_worker = BatchDownloadWorker(url)
+        dialog = self.show_progress_dialog("메뉴 전체 다운로드 진행 중", self.batch_worker)
+        dialog.set_indeterminate()
+        dialog.append_log("다운로드 준비 중...")
+        self.batch_worker.progress_message.connect(self.handle_progress_message)
+        self.batch_worker.progress_value.connect(self.handle_progress_value)
+        self.batch_worker.completed.connect(self.handle_batch_download_completed)
+        self.batch_worker.failed.connect(self.handle_download_failed)
+        self.batch_worker.cancelled.connect(self.handle_download_cancelled)
+        self.batch_worker.finished.connect(lambda: self.set_busy(False))
+        self.batch_worker.start()
 
     def handle_duplicate_folder_found(self, folder_path: str, title: str) -> None:
         answer = QMessageBox.question(
@@ -403,14 +895,39 @@ class MainWindow(QMainWindow):
         upsert_archive_entry(make_index_entry(meta))
         self.refresh_posts()
         self.statusBar().showMessage("다운로드 완료")
-        QMessageBox.information(self, "완료", "다운로드 완료")
+        if self.progress_dialog is not None:
+            self.progress_dialog.mark_completed("다운로드 완료")
 
     def handle_download_failed(self, message: str) -> None:
         self.statusBar().showMessage("다운로드 실패")
-        QMessageBox.warning(self, "다운로드 실패", message or "다운로드 실패")
+        if self.progress_dialog is not None:
+            self.progress_dialog.mark_failed(message or "다운로드 실패")
+        else:
+            QMessageBox.warning(self, "다운로드 실패", message or "다운로드 실패")
 
     def handle_download_cancelled(self, message: str) -> None:
+        self.refresh_posts()
         self.statusBar().showMessage(message or "다운로드가 취소되었습니다.")
+        if self.progress_dialog is not None:
+            self.progress_dialog.mark_cancelled(message or "다운로드가 취소되었습니다.")
+
+    def handle_batch_download_completed(self, result: dict[str, Any] | BatchDownloadResult) -> None:
+        self.refresh_posts()
+        if isinstance(result, dict):
+            downloaded_count = result.get("downloaded_count", 0)
+            skipped_count = result.get("skipped_count", 0)
+            failed_count = result.get("failed_count", 0)
+        else:
+            downloaded_count = result.downloaded_count
+            skipped_count = result.skipped_count
+            failed_count = result.failed_count
+        message = (
+            f"메뉴 다운로드 완료: 다운로드 {downloaded_count}, "
+            f"스킵 {skipped_count}, 실패 {failed_count}"
+        )
+        self.statusBar().showMessage(message)
+        if self.progress_dialog is not None:
+            self.progress_dialog.mark_completed(message)
 
     def start_login_setup(self) -> None:
         self.set_busy(True)
@@ -436,10 +953,145 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "오류", "저장된 페이지를 열 수 없습니다.")
 
     def open_selected_folder(self) -> None:
-        if not self.selected_post or not open_path(str(self.selected_post.get("folder_path") or "")):
+        folder_path = ""
+        if self.selected_post:
+            folder_path = str(self.selected_post.get("folder_path") or "")
+        elif self.selected_group:
+            folder_path = str(self.selected_group.get("folder_path") or "")
+        if not folder_path or not open_path(folder_path):
             QMessageBox.warning(self, "오류", "저장 폴더를 열 수 없습니다.")
 
+    def ask_new_folder_name(self, current_folder: Path, title: str) -> Optional[Path]:
+        value, ok = QInputDialog.getText(self, "폴더명 변경", "새 폴더명을 입력하세요:", text=current_folder.name)
+        if not ok:
+            return None
+
+        safe_name = sanitize_filename(value)
+        if not safe_name:
+            QMessageBox.warning(self, "변경 실패", "폴더명을 입력해주세요.")
+            return None
+
+        target = current_folder.parent / safe_name
+        if target.resolve() == current_folder.resolve():
+            self.statusBar().showMessage("폴더명이 변경되지 않았습니다.")
+            return None
+        if target.exists():
+            QMessageBox.warning(self, "변경 실패", f"'{safe_name}' 폴더가 이미 존재합니다.")
+            return None
+
+        answer = QMessageBox.question(
+            self,
+            "폴더명 변경 확인",
+            f"'{current_folder.name}' 폴더명을 '{safe_name}'로 변경할까요?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return None
+        return target
+
+    def rename_selected_folder(self) -> None:
+        if self.selected_group:
+            self.rename_selected_menu_group_folder()
+            return
+        if self.selected_post:
+            self.rename_selected_post_folder()
+            return
+        QMessageBox.warning(self, "변경 실패", "폴더명을 변경할 항목을 선택해주세요.")
+
+    def rename_selected_post_folder(self) -> None:
+        if not self.selected_post:
+            return
+
+        current_folder = Path(str(self.selected_post.get("folder_path") or "")).resolve()
+        if not can_manage_archive_folder(str(current_folder)):
+            QMessageBox.warning(self, "변경 실패", "저장 폴더명을 변경할 수 없습니다.")
+            return
+
+        target_folder = self.ask_new_folder_name(current_folder, str(self.selected_post.get("title") or ""))
+        if target_folder is None:
+            return
+
+        try:
+            current_folder.rename(target_folder)
+            local_view_path = target_folder / "view.html"
+            update_archive_entry_paths(
+                str(self.selected_post.get("id") or ""),
+                folder_path=str(target_folder.resolve()),
+                local_view_path=str(local_view_path.resolve()),
+            )
+            update_post_meta_paths(target_folder, local_view_path)
+        except Exception as exc:
+            QMessageBox.warning(self, "변경 실패", f"폴더명을 변경할 수 없습니다: {exc}")
+            return
+
+        self.selected_post = None
+        self.show_post_details(None)
+        self.refresh_posts()
+        self.statusBar().showMessage("폴더명 변경 완료")
+
+    def rename_selected_menu_group_folder(self) -> None:
+        if not self.selected_group:
+            return
+
+        current_folder = Path(str(self.selected_group.get("folder_path") or "")).resolve()
+        if not can_manage_archive_folder(str(current_folder)):
+            QMessageBox.warning(self, "변경 실패", "메뉴 저장 폴더명을 변경할 수 없습니다.")
+            return
+
+        target_folder = self.ask_new_folder_name(current_folder, str(self.selected_group.get("menu_title") or ""))
+        if target_folder is None:
+            return
+
+        posts = self.selected_group.get("posts")
+        post_list = posts if isinstance(posts, list) else []
+        path_updates: dict[str, dict[str, str]] = {}
+
+        try:
+            current_folder.rename(target_folder)
+            for post in post_list:
+                post_id = str(post.get("id") or "")
+                old_folder = Path(str(post.get("folder_path") or ""))
+                if not post_id or not old_folder:
+                    continue
+                try:
+                    relative_folder = old_folder.resolve().relative_to(current_folder)
+                except ValueError:
+                    continue
+                new_folder = target_folder / relative_folder
+                new_view = new_folder / "view.html"
+                path_updates[post_id] = {
+                    "folder_path": str(new_folder.resolve()),
+                    "local_view_path": str(new_view.resolve()),
+                }
+                update_post_meta_paths(new_folder, new_view)
+
+            if path_updates:
+                update_archive_entries_paths(path_updates)
+
+            # Batch summaries keep a menu root path for group-level browsing.
+            # Update it so Open Folder keeps working after a menu folder rename.
+            batch_id = str(self.selected_group.get("batch_id") or "")
+            summary_path = batch_summary_path(batch_id)
+            summary = read_json_file(summary_path)
+            if summary:
+                summary["menu_folder_path"] = str(target_folder.resolve())
+                write_json_file(summary_path, summary)
+        except Exception as exc:
+            QMessageBox.warning(self, "변경 실패", f"메뉴 저장 폴더명을 변경할 수 없습니다: {exc}")
+            return
+
+        self.selected_group = None
+        self.selected_post = None
+        self.show_post_details(None)
+        self.refresh_posts()
+        self.statusBar().showMessage("메뉴 폴더명 변경 완료")
+
     def delete_selected_archive(self) -> None:
+        if self.selected_group:
+            self.delete_selected_menu_group()
+            return
+
         if not self.selected_post:
             QMessageBox.warning(self, "삭제 실패", "삭제할 게시글을 선택해주세요.")
             return
@@ -472,10 +1124,50 @@ class MainWindow(QMainWindow):
         self.refresh_posts()
         self.statusBar().showMessage("삭제 완료")
 
+    def delete_selected_menu_group(self) -> None:
+        if not self.selected_group:
+            QMessageBox.warning(self, "삭제 실패", "삭제할 메뉴 그룹을 선택해주세요.")
+            return
+
+        folder_path = str(self.selected_group.get("folder_path") or "")
+        if not can_delete_archive_folder(folder_path):
+            QMessageBox.warning(self, "삭제 실패", "메뉴 저장 폴더를 삭제할 수 없습니다.")
+            return
+
+        posts = self.selected_group.get("posts")
+        post_list = posts if isinstance(posts, list) else []
+        post_ids = {str(post.get("id") or "") for post in post_list if str(post.get("id") or "")}
+        menu_title = str(self.selected_group.get("menu_title") or self.selected_group.get("menu_id") or "메뉴 다운로드")
+
+        answer = QMessageBox.question(
+            self,
+            "메뉴 폴더 삭제 확인",
+            f"'{menu_title}' 메뉴 저장 폴더와 포함된 목록 항목 {len(post_ids)}개를 삭제할까요?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+
+        try:
+            shutil.rmtree(Path(folder_path))
+            remove_archive_entries(post_ids)
+        except Exception as exc:
+            QMessageBox.warning(self, "삭제 실패", f"메뉴 저장 폴더를 삭제할 수 없습니다: {exc}")
+            return
+
+        self.selected_group = None
+        self.selected_post = None
+        self.show_post_details(None)
+        self.refresh_posts()
+        self.statusBar().showMessage("메뉴 폴더 삭제 완료")
+
     def closeEvent(self, event: Any) -> None:
         self.close_session_check_dialog()
-        for worker in (self.download_worker, self.login_worker, self.session_check_worker):
+        for worker in (self.download_worker, self.batch_worker, self.login_worker, self.session_check_worker):
             if worker is not None and worker.isRunning():
+                if hasattr(worker, "request_cancel"):
+                    worker.request_cancel()
                 worker.quit()
                 worker.wait(3000)
         super().closeEvent(event)

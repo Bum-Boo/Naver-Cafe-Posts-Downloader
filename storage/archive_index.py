@@ -6,6 +6,17 @@ from typing import Any
 
 
 DEFAULT_INDEX_PATH = Path("./data/archive_index.json")
+INDEX_OPTIONAL_FIELDS = (
+    "download_type",
+    "article_key",
+    "club_id",
+    "article_id",
+    "cafe_name",
+    "menu_id",
+    "menu_title",
+    "source_menu_url",
+    "batch_id",
+)
 
 
 def ensure_index_file(index_path: Path = DEFAULT_INDEX_PATH) -> None:
@@ -40,8 +51,49 @@ def save_archive_index(posts: list[dict[str, Any]], index_path: Path = DEFAULT_I
     )
 
 
+def make_article_key(
+    *,
+    club_id: Any = None,
+    article_id: Any = None,
+    cafe_name: Any = None,
+    source_url: Any = None,
+) -> str:
+    # Titles can change or duplicate across posts, so duplicate detection uses
+    # stable cafe/article identifiers whenever Naver exposes them.
+    club = str(club_id or "").strip()
+    article = str(article_id or "").strip()
+    cafe = str(cafe_name or "").strip()
+    source = str(source_url or "").strip()
+
+    if club and article:
+        return f"{club}:{article}"
+    if cafe and article:
+        return f"{cafe}:{article}"
+    return source
+
+
+def get_existing_article_keys(index_path: Path = DEFAULT_INDEX_PATH) -> set[str]:
+    keys: set[str] = set()
+    for post in load_archive_index(index_path):
+        key = str(post.get("article_key") or "").strip()
+        if not key:
+            key = make_article_key(
+                club_id=post.get("club_id"),
+                article_id=post.get("article_id"),
+                cafe_name=post.get("cafe_name"),
+                source_url=post.get("source_url"),
+            )
+        if key:
+            keys.add(key)
+    return keys
+
+
+def has_article_key(article_key: str, index_path: Path = DEFAULT_INDEX_PATH) -> bool:
+    return bool(article_key) and article_key in get_existing_article_keys(index_path)
+
+
 def make_index_entry(meta: dict[str, Any]) -> dict[str, Any]:
-    return {
+    entry = {
         "id": meta["id"],
         "title": meta["title"],
         "source_url": meta["source_url"],
@@ -50,6 +102,11 @@ def make_index_entry(meta: dict[str, Any]) -> dict[str, Any]:
         "local_view_path": meta["local_view_path"],
         "image_count": meta["image_count"],
     }
+    for field in INDEX_OPTIONAL_FIELDS:
+        value = meta.get(field)
+        if value not in (None, ""):
+            entry[field] = value
+    return entry
 
 
 def upsert_archive_entry(entry: dict[str, Any], index_path: Path = DEFAULT_INDEX_PATH) -> list[dict[str, Any]]:
@@ -63,5 +120,48 @@ def upsert_archive_entry(entry: dict[str, Any], index_path: Path = DEFAULT_INDEX
 def remove_archive_entry(post_id: str, index_path: Path = DEFAULT_INDEX_PATH) -> list[dict[str, Any]]:
     posts = load_archive_index(index_path)
     posts = [post for post in posts if post.get("id") != post_id]
+    save_archive_index(posts, index_path)
+    return posts
+
+
+def remove_archive_entries(post_ids: set[str], index_path: Path = DEFAULT_INDEX_PATH) -> list[dict[str, Any]]:
+    posts = load_archive_index(index_path)
+    posts = [post for post in posts if str(post.get("id") or "") not in post_ids]
+    save_archive_index(posts, index_path)
+    return posts
+
+
+def update_archive_entry_paths(
+    post_id: str,
+    *,
+    folder_path: str,
+    local_view_path: str,
+    index_path: Path = DEFAULT_INDEX_PATH,
+) -> list[dict[str, Any]]:
+    # Folder renames happen outside the original download flow. Keep the index
+    # aligned so preview/open/delete operations point at the new location.
+    posts = load_archive_index(index_path)
+    for post in posts:
+        if str(post.get("id") or "") == post_id:
+            post["folder_path"] = folder_path
+            post["local_view_path"] = local_view_path
+            break
+    save_archive_index(posts, index_path)
+    return posts
+
+
+def update_archive_entries_paths(
+    path_updates: dict[str, dict[str, str]],
+    index_path: Path = DEFAULT_INDEX_PATH,
+) -> list[dict[str, Any]]:
+    # Menu group renames update every child post path in one index write.
+    posts = load_archive_index(index_path)
+    for post in posts:
+        post_id = str(post.get("id") or "")
+        update = path_updates.get(post_id)
+        if not update:
+            continue
+        post["folder_path"] = update["folder_path"]
+        post["local_view_path"] = update["local_view_path"]
     save_archive_index(posts, index_path)
     return posts

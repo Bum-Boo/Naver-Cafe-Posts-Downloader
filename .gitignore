@@ -14,6 +14,7 @@ data/browser_state.json
 
 # Local archive list can include private post titles and source URLs.
 data/archive_index.json
+data/batches/
 
 # OS/editor temporary files.
 .DS_Store
