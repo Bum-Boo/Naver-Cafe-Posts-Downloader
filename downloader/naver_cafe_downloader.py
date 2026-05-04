@@ -57,6 +57,7 @@ ACCESS_KEYWORDS: Sequence[str] = (
 )
 
 ProgressCallback = Callable[[str], None]
+ExistingFolderCallback = Callable[[Path, str], bool]
 TargetPage = Page | Frame
 SESSION_EXPIRED_MESSAGE = "네이버 로그인 세션이 만료되었거나 카페 접근 권한 확인이 필요합니다. [네이버 로그인 세션 연결]을 다시 실행해주세요."
 
@@ -100,6 +101,10 @@ class ExtractionResult:
 
 
 class AccessRequiredError(RuntimeError):
+    pass
+
+
+class DownloadCancelledError(RuntimeError):
     pass
 
 
@@ -699,6 +704,7 @@ def _download_post_once(
     *,
     headless: bool,
     progress: Optional[ProgressCallback],
+    confirm_existing_folder: Optional[ExistingFolderCallback],
 ) -> dict[str, Any]:
     with sync_playwright() as playwright:
         context: Optional[BrowserContext] = None
@@ -714,6 +720,10 @@ def _download_post_once(
                 raise AccessRequiredError(SESSION_EXPIRED_MESSAGE)
 
             result = extract_current_post(page, parsed_url)
+            existing_folder = SAVED_POSTS_DIR / sanitize_filename(result.title)
+            if existing_folder.exists() and confirm_existing_folder and not confirm_existing_folder(existing_folder, result.title):
+                raise DownloadCancelledError("다운로드가 취소되었습니다.")
+
             post_id = uuid.uuid4().hex
             folder = create_unique_folder(SAVED_POSTS_DIR, result.title)
             image_files, failed_images, image_map = download_images(
@@ -746,6 +756,8 @@ def _download_post_once(
             save_post_files(folder, result.body_text, result.body_html, meta)
             save_session_state(context)
             return meta
+        except DownloadCancelledError:
+            raise
         except Exception as exc:
             if page is not None:
                 if target_info is None:
@@ -760,12 +772,26 @@ def _download_post_once(
                 context.close()
 
 
-def download_post(url: str, progress: Optional[ProgressCallback] = None) -> dict[str, Any]:
+def download_post(
+    url: str,
+    progress: Optional[ProgressCallback] = None,
+    confirm_existing_folder: Optional[ExistingFolderCallback] = None,
+) -> dict[str, Any]:
     parsed_url = parse_naver_cafe_url(url)
     SAVED_POSTS_DIR.mkdir(parents=True, exist_ok=True)
 
     try:
-        return _download_post_once(parsed_url, headless=True, progress=progress)
+        return _download_post_once(
+            parsed_url,
+            headless=True,
+            progress=progress,
+            confirm_existing_folder=confirm_existing_folder,
+        )
     except AccessRequiredError:
         emit(progress, "백그라운드 세션이 인증을 요구해 보이는 브라우저로 한 번 더 확인합니다.")
-        return _download_post_once(parsed_url, headless=False, progress=progress)
+        return _download_post_once(
+            parsed_url,
+            headless=False,
+            progress=progress,
+            confirm_existing_folder=confirm_existing_folder,
+        )

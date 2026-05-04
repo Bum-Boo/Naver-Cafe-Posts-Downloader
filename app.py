@@ -4,6 +4,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 from pathlib import Path
 from typing import Any, Optional
 
@@ -33,6 +34,7 @@ from PySide6.QtCore import QUrl
 from downloader.naver_cafe_downloader import (
     SESSION_EXPIRED_MESSAGE,
     AccessRequiredError,
+    DownloadCancelledError,
     check_saved_session,
     download_post,
     setup_login_session,
@@ -102,17 +104,39 @@ def make_preview_browser() -> QTextBrowser:
 
 class DownloadWorker(QThread):
     progress = Signal(str)
+    duplicate_folder_found = Signal(str, str)
     completed = Signal(dict)
     failed = Signal(str)
+    cancelled = Signal(str)
 
     def __init__(self, url: str) -> None:
         super().__init__()
         self.url = url
+        self._duplicate_event: Optional[threading.Event] = None
+        self._duplicate_decision = False
+
+    def confirm_existing_folder(self, folder: Path, title: str) -> bool:
+        self._duplicate_decision = False
+        self._duplicate_event = threading.Event()
+        self.duplicate_folder_found.emit(str(folder.resolve()), title)
+        self._duplicate_event.wait()
+        return self._duplicate_decision
+
+    def resolve_duplicate_confirmation(self, should_continue: bool) -> None:
+        self._duplicate_decision = should_continue
+        if self._duplicate_event is not None:
+            self._duplicate_event.set()
 
     def run(self) -> None:
         try:
-            meta = download_post(self.url, progress=self.progress.emit)
+            meta = download_post(
+                self.url,
+                progress=self.progress.emit,
+                confirm_existing_folder=self.confirm_existing_folder,
+            )
             self.completed.emit(meta)
+        except DownloadCancelledError as exc:
+            self.cancelled.emit(str(exc))
         except AccessRequiredError as exc:
             self.failed.emit(str(exc))
         except Exception as exc:
@@ -234,6 +258,7 @@ class MainWindow(QMainWindow):
         self.setStatusBar(QStatusBar())
 
         self.download_button.clicked.connect(self.start_download)
+        self.url_input.returnPressed.connect(self.start_download)
         self.login_button.clicked.connect(self.start_login_setup)
         self.refresh_button.clicked.connect(self.refresh_posts)
         self.open_page_button.clicked.connect(self.open_selected_page)
@@ -341,6 +366,11 @@ class MainWindow(QMainWindow):
         self.preview_browser.setSource(QUrl.fromLocalFile(str(path.resolve())))
 
     def start_download(self) -> None:
+        if not self.download_button.isEnabled():
+            return
+        if self.download_worker is not None and self.download_worker.isRunning():
+            return
+
         url = self.url_input.text().strip()
         if not url:
             QMessageBox.warning(self, "입력 필요", "URL을 입력해주세요.")
@@ -350,10 +380,24 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("네이버 카페 게시글을 다운로드하는 중...")
         self.download_worker = DownloadWorker(url)
         self.download_worker.progress.connect(self.statusBar().showMessage)
+        self.download_worker.duplicate_folder_found.connect(self.handle_duplicate_folder_found)
         self.download_worker.completed.connect(self.handle_download_completed)
         self.download_worker.failed.connect(self.handle_download_failed)
+        self.download_worker.cancelled.connect(self.handle_download_cancelled)
         self.download_worker.finished.connect(lambda: self.set_busy(False))
         self.download_worker.start()
+
+    def handle_duplicate_folder_found(self, folder_path: str, title: str) -> None:
+        answer = QMessageBox.question(
+            self,
+            "이미 존재하는 폴더",
+            f"'{title}' 이름의 저장 폴더가 이미 존재합니다.\n\n그래도 다운로드할까요?\n계속하면 새 폴더 이름에 _2, _3 같은 번호가 붙습니다.",
+            QMessageBox.Ok | QMessageBox.Cancel,
+            QMessageBox.Cancel,
+        )
+        should_continue = answer == QMessageBox.Ok
+        if self.download_worker is not None:
+            self.download_worker.resolve_duplicate_confirmation(should_continue)
 
     def handle_download_completed(self, meta: dict[str, Any]) -> None:
         upsert_archive_entry(make_index_entry(meta))
@@ -364,6 +408,9 @@ class MainWindow(QMainWindow):
     def handle_download_failed(self, message: str) -> None:
         self.statusBar().showMessage("다운로드 실패")
         QMessageBox.warning(self, "다운로드 실패", message or "다운로드 실패")
+
+    def handle_download_cancelled(self, message: str) -> None:
+        self.statusBar().showMessage(message or "다운로드가 취소되었습니다.")
 
     def start_login_setup(self) -> None:
         self.set_busy(True)
