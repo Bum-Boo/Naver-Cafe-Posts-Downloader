@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from PySide6.QtCore import QThread, Qt, Signal
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QDesktopServices, QFont, QIcon
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -35,6 +35,16 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from PySide6.QtCore import QUrl
+
+from app_paths import (
+    configure_playwright_browsers_path,
+    ensure_runtime_dirs,
+    get_app_base_dir,
+    get_batches_dir,
+    get_saved_posts_dir,
+)
+
+configure_playwright_browsers_path()
 
 from downloader.naver_cafe_downloader import (
     SESSION_EXPIRED_MESSAGE,
@@ -61,12 +71,141 @@ from storage.archive_index import (
 )
 
 
+APP_VERSION = "0.1.0"
 DOWNLOAD_MODE_AUTO = "자동 감지"
 DOWNLOAD_MODE_SINGLE = "개별 게시글 다운로드"
 DOWNLOAD_MODE_MENU = "메뉴 전체 다운로드"
 FILTER_ALL = "전체 보기"
 FILTER_SINGLE = "개별 다운로드만"
 FILTER_MENU = "메뉴 다운로드만"
+
+
+def apply_app_theme(app: QApplication) -> None:
+    app.setFont(QFont("맑은 고딕", 10))
+    app.setStyleSheet(
+        """
+        QWidget {
+            background: #f3f8ff;
+            color: #12304f;
+            font-family: "Pretendard", "Segoe UI", "맑은 고딕", sans-serif;
+            font-size: 10pt;
+        }
+        QMainWindow, #appRoot {
+            background: #eef6ff;
+        }
+        #sidePanel, #detailsPanel, #previewPanel {
+            background: #ffffff;
+            border: 1px solid #d6e7fb;
+            border-radius: 10px;
+        }
+        QLabel {
+            background: transparent;
+            color: #173b63;
+        }
+        QLineEdit, QTextEdit, QTextBrowser, QComboBox, QTreeWidget {
+            background: #ffffff;
+            border: 1px solid #bfd8f3;
+            border-radius: 8px;
+            padding: 7px 9px;
+            selection-background-color: #2f80ed;
+            selection-color: #ffffff;
+        }
+        QTextEdit:read-only {
+            background: #f7fbff;
+        }
+        QLineEdit:focus, QTextEdit:focus, QTextBrowser:focus, QComboBox:focus, QTreeWidget:focus {
+            border: 1px solid #2f80ed;
+        }
+        QPushButton {
+            background: #e6f1ff;
+            color: #11406d;
+            border: 1px solid #a9cdf3;
+            border-radius: 8px;
+            padding: 8px 13px;
+            font-weight: 600;
+        }
+        QPushButton:hover {
+            background: #d6eaff;
+            border-color: #73afea;
+        }
+        QPushButton:pressed {
+            background: #c2dcfa;
+        }
+        QPushButton:disabled {
+            background: #eef3f8;
+            color: #8ba2b8;
+            border-color: #d6e1ec;
+        }
+        #downloadButton {
+            background: #1f6fd1;
+            color: #ffffff;
+            border: 1px solid #1f6fd1;
+        }
+        #downloadButton:hover {
+            background: #185fb8;
+        }
+        #loginButton {
+            background: #0f4f8f;
+            color: #ffffff;
+            border: 1px solid #0f4f8f;
+        }
+        #loginButton:hover {
+            background: #0b427a;
+        }
+        QTreeWidget::item {
+            min-height: 28px;
+            border-radius: 6px;
+            padding: 4px 6px;
+        }
+        QTreeWidget::item:selected {
+            background: #d7ebff;
+            color: #0b3a68;
+        }
+        QTreeWidget::item:hover {
+            background: #edf6ff;
+        }
+        QProgressBar {
+            background: #dbeafb;
+            border: 1px solid #b8d5f1;
+            border-radius: 7px;
+            height: 16px;
+            text-align: center;
+            color: #12304f;
+        }
+        QProgressBar::chunk {
+            background: #2f80ed;
+            border-radius: 6px;
+        }
+        QStatusBar {
+            background: #e6f1ff;
+            color: #173b63;
+            border-top: 1px solid #c8def5;
+        }
+        QSplitter::handle {
+            background: #d8e9fb;
+        }
+        QScrollBar:vertical, QScrollBar:horizontal {
+            background: #eef6ff;
+            border: none;
+            width: 12px;
+            height: 12px;
+        }
+        QScrollBar::handle:vertical, QScrollBar::handle:horizontal {
+            background: #9bc7f2;
+            border-radius: 6px;
+            min-height: 24px;
+            min-width: 24px;
+        }
+        """
+    )
+
+
+def display_download_type(value: str) -> str:
+    if value == "menu_batch":
+        return "메뉴 일괄 다운로드"
+    if value == "single_post":
+        return "개별 게시글 다운로드"
+    return value or "-"
 
 
 def open_path(path: str) -> bool:
@@ -93,7 +232,7 @@ def can_delete_archive_folder(path: str) -> bool:
     if not path:
         return False
     target = Path(path).resolve()
-    archive_root = Path("./saved_posts").resolve()
+    archive_root = get_saved_posts_dir().resolve()
     try:
         target.relative_to(archive_root)
     except ValueError:
@@ -143,7 +282,7 @@ def infer_download_type(post: dict[str, Any]) -> str:
 
 
 def batch_summary_path(batch_id: str) -> Path:
-    return Path("./data/batches") / f"{batch_id}.json"
+    return get_batches_dir() / f"{batch_id}.json"
 
 
 def load_batch_summary(batch_id: str) -> dict[str, Any]:
@@ -412,7 +551,15 @@ class SessionCheckWorker(QThread):
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("Naver Cafe Archive Manager")
+        ensure_runtime_dirs()
+        self.setWindowTitle(f"네이버 카페 아카이브 매니저 v{APP_VERSION}")
+        for icon_path in (
+            get_app_base_dir() / "assets" / "app_icon.ico",
+            get_app_base_dir() / "assets" / "naver_cafe_archive_icon.ico",
+        ):
+            if icon_path.exists():
+                self.setWindowIcon(QIcon(str(icon_path)))
+                break
         self.resize(980, 620)
 
         self.posts: list[dict[str, Any]] = []
@@ -428,9 +575,11 @@ class MainWindow(QMainWindow):
         self.mode_selector = QComboBox()
         self.mode_selector.addItems([DOWNLOAD_MODE_AUTO, DOWNLOAD_MODE_SINGLE, DOWNLOAD_MODE_MENU])
         self.url_input = QLineEdit()
-        self.url_input.setPlaceholderText("네이버 카페 게시글 URL을 붙여넣으세요")
+        self.url_input.setPlaceholderText("네이버 카페 게시글 주소를 붙여넣으세요")
         self.download_button = QPushButton("다운로드")
+        self.download_button.setObjectName("downloadButton")
         self.login_button = QPushButton("네이버 로그인 세션 연결")
+        self.login_button.setObjectName("loginButton")
         self.session_status_label = QLabel("세션 상태: 확인 중")
         self.session_status_label.setMinimumWidth(180)
 
@@ -449,6 +598,7 @@ class MainWindow(QMainWindow):
         # The tree keeps old single-post archives visible while grouping newer
         # menu batch downloads by menu/batch metadata.
         left_panel = QWidget()
+        left_panel.setObjectName("sidePanel")
         left_layout = QVBoxLayout(left_panel)
         left_layout.addWidget(QLabel("목록 필터"))
         left_layout.addWidget(self.list_filter)
@@ -469,26 +619,27 @@ class MainWindow(QMainWindow):
 
         details_layout = QFormLayout()
         details_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
-        details_layout.addRow("title", self.title_value)
-        details_layout.addRow("source URL", self.source_url_value)
-        details_layout.addRow("saved date", self.saved_at_value)
-        details_layout.addRow("image count", self.image_count_value)
-        details_layout.addRow("local folder", self.folder_path_value)
-        details_layout.addRow("download type", self.download_type_value)
-        details_layout.addRow("menu title", self.menu_title_value)
-        details_layout.addRow("menu id", self.menu_id_value)
-        details_layout.addRow("source menu URL", self.source_menu_url_value)
-        details_layout.addRow("batch id", self.batch_id_value)
-        details_layout.addRow("total posts", self.total_posts_value)
-        details_layout.addRow("batch counts", self.batch_counts_value)
+        details_layout.addRow("제목", self.title_value)
+        details_layout.addRow("원본 주소", self.source_url_value)
+        details_layout.addRow("저장일", self.saved_at_value)
+        details_layout.addRow("이미지 수", self.image_count_value)
+        details_layout.addRow("저장 폴더", self.folder_path_value)
+        details_layout.addRow("다운로드 유형", self.download_type_value)
+        details_layout.addRow("메뉴 제목", self.menu_title_value)
+        details_layout.addRow("메뉴 ID", self.menu_id_value)
+        details_layout.addRow("원본 메뉴 주소", self.source_menu_url_value)
+        details_layout.addRow("배치 ID", self.batch_id_value)
+        details_layout.addRow("게시글 수", self.total_posts_value)
+        details_layout.addRow("처리 결과", self.batch_counts_value)
         details_panel = QWidget()
+        details_panel.setObjectName("detailsPanel")
         details_panel.setLayout(details_layout)
 
-        self.open_page_button = QPushButton("Open Local Page")
-        self.open_folder_button = QPushButton("Open Folder")
-        self.rename_folder_button = QPushButton("Rename Folder")
-        self.delete_button = QPushButton("Delete Archive")
-        self.refresh_button = QPushButton("Refresh List")
+        self.open_page_button = QPushButton("저장 페이지 열기")
+        self.open_folder_button = QPushButton("저장 폴더 열기")
+        self.rename_folder_button = QPushButton("폴더명 변경")
+        self.delete_button = QPushButton("저장 항목 삭제")
+        self.refresh_button = QPushButton("목록 새로고침")
         self.preview_browser = make_preview_browser()
 
         side_button_layout = QVBoxLayout()
@@ -503,6 +654,7 @@ class MainWindow(QMainWindow):
         preview_layout.addWidget(self.preview_browser, 1)
         preview_layout.addLayout(side_button_layout)
         preview_panel = QWidget()
+        preview_panel.setObjectName("previewPanel")
         preview_panel.setLayout(preview_layout)
 
         right_splitter = QSplitter(Qt.Vertical)
@@ -527,6 +679,7 @@ class MainWindow(QMainWindow):
         splitter.setSizes([300, 680])
 
         root = QWidget()
+        root.setObjectName("appRoot")
         root_layout = QVBoxLayout(root)
         root_layout.addLayout(top_layout)
         root_layout.addWidget(splitter, 1)
@@ -753,7 +906,7 @@ class MainWindow(QMainWindow):
         self.saved_at_value.setText(str(post.get("saved_at") or "-"))
         self.image_count_value.setText(str(post.get("image_count") or 0))
         self.folder_path_value.setPlainText(str(post.get("folder_path") or ""))
-        self.download_type_value.setText(str(infer_download_type(post)))
+        self.download_type_value.setText(display_download_type(infer_download_type(post)))
         self.menu_title_value.setText(str(post.get("menu_title") or "-"))
         self.menu_id_value.setText(str(post.get("menu_id") or "-"))
         self.source_menu_url_value.setPlainText(str(post.get("source_menu_url") or ""))
@@ -775,7 +928,7 @@ class MainWindow(QMainWindow):
         self.saved_at_value.setText(str(summary.get("completed_at") or "-"))
         self.image_count_value.setText("-")
         self.folder_path_value.setPlainText(str(group.get("folder_path") or ""))
-        self.download_type_value.setText("menu_batch")
+        self.download_type_value.setText(display_download_type("menu_batch"))
         self.menu_title_value.setText(str(group.get("menu_title") or "-"))
         self.menu_id_value.setText(str(group.get("menu_id") or "-"))
         self.source_menu_url_value.setPlainText(str(group.get("source_menu_url") or ""))
@@ -808,21 +961,21 @@ class MainWindow(QMainWindow):
 
         url = self.url_input.text().strip()
         if not url:
-            QMessageBox.warning(self, "입력 필요", "URL을 입력해주세요.")
+            QMessageBox.warning(self, "입력 필요", "주소를 입력해주세요.")
             return
 
         parsed = parse_naver_cafe_url_type(url)
         mode = self.mode_selector.currentText()
         # Mode validation happens before starting a worker so unsupported or
-        # mismatched URLs fail fast with a Korean UI message.
+        # mismatched addresses fail fast with a Korean UI message.
         if parsed.url_type == "unsupported":
-            QMessageBox.warning(self, "지원하지 않는 URL", "지원하지 않는 네이버 카페 URL입니다.")
+            QMessageBox.warning(self, "지원하지 않는 주소", "지원하지 않는 네이버 카페 주소입니다.")
             return
         if mode == DOWNLOAD_MODE_SINGLE and parsed.url_type == "menu":
-            QMessageBox.warning(self, "모드 확인", "이 URL은 메뉴/게시판 URL입니다. 메뉴 전체 다운로드 모드를 선택해주세요.")
+            QMessageBox.warning(self, "모드 확인", "이 주소는 메뉴/게시판 주소입니다. 메뉴 전체 다운로드 모드를 선택해주세요.")
             return
         if mode == DOWNLOAD_MODE_MENU and parsed.url_type == "single_post":
-            QMessageBox.warning(self, "모드 확인", "이 URL은 개별 게시글 URL입니다. 개별 게시글 다운로드 모드를 선택해주세요.")
+            QMessageBox.warning(self, "모드 확인", "이 주소는 개별 게시글 주소입니다. 개별 게시글 다운로드 모드를 선택해주세요.")
             return
 
         if parsed.url_type == "menu":
@@ -1070,7 +1223,7 @@ class MainWindow(QMainWindow):
                 update_archive_entries_paths(path_updates)
 
             # Batch summaries keep a menu root path for group-level browsing.
-            # Update it so Open Folder keeps working after a menu folder rename.
+            # Update it so the folder-open action keeps working after a menu folder rename.
             batch_id = str(self.selected_group.get("batch_id") or "")
             summary_path = batch_summary_path(batch_id)
             summary = read_json_file(summary_path)
@@ -1175,6 +1328,7 @@ class MainWindow(QMainWindow):
 
 def main() -> int:
     app = QApplication(sys.argv)
+    apply_app_theme(app)
     window = MainWindow()
     window.show()
     return app.exec()

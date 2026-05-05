@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>Naver Cafe Archive Manager Icon</title>
+  <desc>Transparent vector app icon showing a document being downloaded into an archive tray.</desc>
+
+  <defs>
+    <linearGradient id="trayGrad" x1="180" y1="540" x2="850" y2="940" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#A9E8CF"/>
+      <stop offset="0.55" stop-color="#78D6B4"/>
+      <stop offset="1" stop-color="#53BE9D"/>
+    </linearGradient>
+
+    <linearGradient id="trayTopGrad" x1="164" y1="494" x2="860" y2="704" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#D6F8EC"/>
+      <stop offset="0.5" stop-color="#B7EFD9"/>
+      <stop offset="1" stop-color="#7BD9B8"/>
+    </linearGradient>
+
+    <linearGradient id="darkGrad" x1="380" y1="128" x2="692" y2="884" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#087164"/>
+      <stop offset="1" stop-color="#004F48"/>
+    </linearGradient>
+
+    <linearGradient id="lineGrad" x1="315" y1="322" x2="670" y2="496" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#92DDBF"/>
+      <stop offset="1" stop-color="#6BC9AA"/>
+    </linearGradient>
+
+    <linearGradient id="thumbGrad" x1="500" y1="520" x2="714" y2="700" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#D5F5E9"/>
+      <stop offset="1" stop-color="#98DFC5"/>
+    </linearGradient>
+
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="150%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="24" stdDeviation="24" flood-color="#00564E" flood-opacity="0.18"/>
+    </filter>
+
+    <filter id="smallShadow" x="-20%" y="-20%" width="140%" height="150%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#004D46" flood-opacity="0.20"/>
+    </filter>
+
+    <clipPath id="paperClip">
+      <rect x="266" y="258" width="492" height="506" rx="52"/>
+    </clipPath>
+
+    <clipPath id="thumbClip">
+      <rect x="495" y="528" width="202" height="164" rx="24"/>
+    </clipPath>
+  </defs>
+
+  <!-- Transparent background by design -->
+
+  <!-- Back tray side wells -->
+  <path d="M187 660C187 590 228 537 279 537H745C796 537 837 590 837 660V734H187V660Z"
+        fill="url(#trayTopGrad)" opacity="0.95" filter="url(#smallShadow)"/>
+
+  <!-- Dark inner side panels -->
+  <path d="M229 647C229 590 261 552 304 552H379V689H229V647Z" fill="#14836F" opacity="0.82"/>
+  <path d="M645 552H720C763 552 795 590 795 647V689H645V552Z" fill="#14836F" opacity="0.82"/>
+
+  <!-- Document -->
+  <rect x="266" y="258" width="492" height="506" rx="52" fill="#FFFFFF" filter="url(#softShadow)"/>
+  <rect x="267.5" y="259.5" width="489" height="503" rx="50.5" stroke="#D7E5DF" stroke-width="3" opacity="0.75"/>
+
+  <!-- Text lines -->
+  <rect x="322" y="348" width="366" height="28" rx="14" fill="url(#lineGrad)"/>
+  <rect x="322" y="420" width="308" height="28" rx="14" fill="url(#lineGrad)"/>
+  <rect x="322" y="492" width="154" height="28" rx="14" fill="url(#lineGrad)"/>
+
+  <!-- Image thumbnail -->
+  <g clip-path="url(#thumbClip)">
+    <rect x="495" y="528" width="202" height="164" rx="24" fill="url(#thumbGrad)"/>
+    <circle cx="648" cy="574" r="24" fill="#FFFFFF"/>
+    <path d="M491 688L559 608C572 593 595 593 608 609L680 694H491Z" fill="#49B98F"/>
+    <path d="M596 694L650 630C660 619 677 619 687 631L730 694H596Z" fill="#2EA07F"/>
+  </g>
+
+  <!-- Front tray body -->
+  <path d="M164 670C164 639 189 614 220 614H336C362 614 386 626 401 647L424 678C437 695 456 705 477 705H547C568 705 588 695 600 678L624 647C639 626 663 614 689 614H804C835 614 860 639 860 670V832C860 887 815 932 760 932H264C209 932 164 887 164 832V670Z"
+        fill="url(#trayGrad)" filter="url(#softShadow)"/>
+
+  <!-- Top rim highlight -->
+  <path d="M220 614H336C362 614 386 626 401 647L424 678C437 695 456 705 477 705H547C568 705 588 695 600 678L624 647C639 626 663 614 689 614H804"
+        stroke="#D6F8EA" stroke-width="38" stroke-linecap="round" stroke-linejoin="round" opacity="0.95"/>
+
+  <!-- Restore inner opening edges over highlight -->
+  <path d="M229 647C229 590 261 552 304 552H339V689H229V647Z" fill="#198A74" opacity="0.74"/>
+  <path d="M685 552H720C763 552 795 590 795 647V689H685V552Z" fill="#198A74" opacity="0.74"/>
+
+  <!-- Front handle -->
+  <rect x="371" y="787" width="282" height="104" rx="34" fill="url(#darkGrad)" filter="url(#smallShadow)"/>
+  <rect x="413" y="830" width="198" height="40" rx="14" fill="#D6F8EA" opacity="0.9"/>
+
+  <!-- Download arrow -->
+  <g filter="url(#smallShadow)">
+    <path d="M512 96C537 96 557 116 557 141V242L614 185C632 167 661 167 679 185C697 203 697 232 679 250L543 386C526 403 498 403 481 386L345 250C327 232 327 203 345 185C363 167 392 167 410 185L467 242V141C467 116 487 96 512 96Z"
+          fill="url(#darkGrad)"/>
+  </g>
+</svg>

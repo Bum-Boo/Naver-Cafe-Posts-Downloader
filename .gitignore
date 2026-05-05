@@ -21,3 +21,10 @@ data/batches/
 Thumbs.db
 .vscode/
 .idea/
+
+# PyInstaller build output.
+build/
+dist/
+release/
+.playwright-browsers/
+*.log

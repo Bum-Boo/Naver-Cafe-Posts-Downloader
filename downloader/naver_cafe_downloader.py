@@ -13,15 +13,25 @@ from urllib.parse import parse_qs, urljoin, urlparse
 
 from playwright.sync_api import BrowserContext, Frame, Locator, Page, Playwright, Response, TimeoutError, sync_playwright
 
+from app_paths import (
+    configure_playwright_browsers_path,
+    get_auth_state_path,
+    get_batches_dir,
+    get_browser_profile_dir,
+    get_debug_dir,
+    get_saved_posts_dir,
+)
 from storage.archive_index import get_existing_article_keys, make_article_key, make_index_entry, upsert_archive_entry
 from viewer.local_page_builder import build_local_page
 
 
-USER_DATA_DIR = Path("./data/browser_profile")
-SAVED_POSTS_DIR = Path("./saved_posts")
-DEBUG_DIR = SAVED_POSTS_DIR / "_debug"
-BATCHES_DIR = Path("./data/batches")
-SESSION_STATE_PATH = Path("./data/auth/naver_state.json")
+configure_playwright_browsers_path()
+
+USER_DATA_DIR = get_browser_profile_dir()
+SAVED_POSTS_DIR = get_saved_posts_dir()
+DEBUG_DIR = get_debug_dir()
+BATCHES_DIR = get_batches_dir()
+SESSION_STATE_PATH = get_auth_state_path()
 MAX_FOLDER_NAME_LENGTH = 80
 INVALID_FILENAME_CHARS = r'[\\/:*?"<>|]'
 BATCH_POST_DELAY_RANGE = (0.6, 1.2)

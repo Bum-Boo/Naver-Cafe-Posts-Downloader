@@ -4,8 +4,10 @@ import json
 from pathlib import Path
 from typing import Any
 
+from app_paths import get_archive_index_path
 
-DEFAULT_INDEX_PATH = Path("./data/archive_index.json")
+
+DEFAULT_INDEX_PATH = get_archive_index_path()
 INDEX_OPTIONAL_FIELDS = (
     "download_type",
     "article_key",
