@@ -42,7 +42,7 @@ def build_local_page(
       margin: 0;
       background: #f6f7f8;
       color: #202124;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+      font-family: "Malgun Gothic", "Malgun Gothic Semilight", "Apple SD Gothic Neo", sans-serif;
       line-height: 1.65;
     }}
     main {{

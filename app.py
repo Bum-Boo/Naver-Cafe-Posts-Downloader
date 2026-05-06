@@ -81,13 +81,13 @@ FILTER_MENU = "메뉴 다운로드만"
 
 
 def apply_app_theme(app: QApplication) -> None:
-    app.setFont(QFont("맑은 고딕", 10))
+    app.setFont(QFont("Malgun Gothic", 10))
     app.setStyleSheet(
         """
         QWidget {
             background: #f3f8ff;
             color: #12304f;
-            font-family: "Pretendard", "Segoe UI", "맑은 고딕", sans-serif;
+            font-family: "Malgun Gothic", "Malgun Gothic Semilight", "맑은 고딕";
             font-size: 10pt;
         }
         QMainWindow, #appRoot {
