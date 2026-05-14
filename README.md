@@ -27,6 +27,8 @@ Windows ZIP:
 
 - [NaverCafeArchiveManager-v0.1.0-win64.zip](https://github.com/Bum-Boo/Naver-Cafe-Posts-Downloader/releases/download/v0.1.0/NaverCafeArchiveManager-v0.1.0-win64.zip)
 
+Release artifacts should be distributed through GitHub Releases, not committed into the source tree.
+
 ## Preview
 
 The app connects a user-controlled browser login session, downloads allowed posts, and opens generated local pages for offline review.
@@ -68,6 +70,7 @@ python app.py
 - [Quickstart text](README_QUICKSTART.txt)
 - [Usage](USAGE.md)
 - [Portfolio case study](docs/portfolio-case-study.md)
+- [GitHub metadata note](docs/github-metadata.md)
 
 ## Status
 
