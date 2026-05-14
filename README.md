@@ -29,7 +29,7 @@
 - 다른 사람에게 프로그램을 공유할 때는 본인이 사용한 `data/`, `saved_posts/` 폴더를 포함하지 마세요.
 
 배포용 ZIP 파일에는 개발자의 로그인 세션이나 저장된 게시글이 포함되어 있지 않습니다.
-## Demo Walkthrough
+## 데모 흐름
 
 실제 데모는 네이버 로그인 세션을 연결한 뒤, 카페 게시글 URL을 입력하고 로컬 저장 결과를 확인하는 흐름입니다.
 
@@ -43,20 +43,20 @@
 
 먼저 `네이버 로그인 세션 연결`을 눌러 브라우저에서 로그인합니다. 앱 상단에 `세션 상태: 적용됨`이 보이면 인증 세션이 연결된 상태입니다.
 
-![Login session applied](docs/demo-screenshots/naver-live-01-session-applied.png)
+![로그인 세션 적용됨](docs/demo-screenshots/naver-live-01-session-applied.png)
 
 저장할 카페 게시글 URL을 입력한 뒤 오른쪽의 `다운로드` 버튼을 누릅니다.
 
-![Cafe post URL entered](docs/demo-screenshots/naver-live-02-url-entered.png)
+![카페 게시글 URL 입력](docs/demo-screenshots/naver-live-02-url-entered.png)
 
 진행 창에서는 게시글 열기, 본문 추출, 이미지 다운로드, 로컬 페이지 생성 순서로 로그가 표시됩니다.
 
-![Download completed](docs/demo-screenshots/naver-live-04-download-result.png)
+![다운로드 완료](docs/demo-screenshots/naver-live-04-download-result.png)
 
 다운로드가 끝나면 왼쪽 목록에서 저장된 게시글을 선택하고, 오른쪽 미리보기에서 제목과 본문 요약을 확인합니다.
 
-![Saved post selected](docs/demo-screenshots/naver-live-05-saved-item-selected.png)
+![저장된 게시글 선택](docs/demo-screenshots/naver-live-05-saved-item-selected.png)
 
 `저장 페이지 열기`를 누르면 브라우저에서 로컬 HTML 페이지가 열려 오프라인 보관 결과를 확인할 수 있습니다.
 
-![Local saved page](docs/demo-screenshots/naver-live-06-local-page.png)
+![로컬 저장 페이지](docs/demo-screenshots/naver-live-06-local-page.png)
