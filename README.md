@@ -1,72 +1,74 @@
-# 네이버 카페 아카이브 매니저
+# Naver-Cafe-Posts-Downloader
 
-> 네이버 카페 게시글을 로그인 세션 기반으로 로컬 PC에 저장하고 다시 열어보는 Windows 데스크톱 앱입니다.
+> Local Windows archive manager for Naver Cafe posts.
 
-| 구분 | 내용 |
+| Area | Detail |
 |---|---|
-| 대상 사용자 | 네이버 카페 게시글을 개인 PC에 보관해야 하는 사용자 |
-| 실행 환경 | Windows 데스크톱 |
-| 저장 위치 | 앱의 `data/`, `saved_posts/` 폴더 |
-| 핵심 흐름 | 로그인 세션 연결 → 게시글 URL 입력 → 다운로드 → 로컬 페이지 확인 |
+| Platform | Windows desktop |
+| Product name in app | Naver Cafe Archive Manager |
+| Scope | Personal/local archive for posts the user is allowed to access |
+| Storage | Local `data/` and `saved_posts/` folders |
+| Safety stance | No password storage, no private-access bypass, no redistribution workflow |
 
-네이버 카페 게시글을 사용자의 PC에 저장해 로컬에서 관리하고 다시 열어볼 수 있게 도와주는 Windows 데스크톱 앱입니다.
+## Safety / Privacy Scope
 
-## 주요 기능
+- Use only with posts and Cafe content you are allowed to access.
+- The app does not store Naver passwords.
+- Login/session data and saved posts stay on the user's PC.
+- The tool does not bypass Cafe access permissions, member level restrictions, private post restrictions, or Naver platform controls.
+- Do not redistribute downloaded private or copyrighted content.
+- Do not share builds with personal `data/`, `browser_profile`, or `saved_posts` folders included.
 
-- 네이버 카페 개별 게시글 다운로드
-- 네이버 카페 메뉴/게시판 게시글 일괄 다운로드
-- 게시글 제목, 본문 텍스트, 본문 HTML, 이미지 저장
-- 저장된 게시글 목록 관리
-- 저장된 로컬 페이지 열기
-- 저장 폴더 열기
-- 폴더명 변경
-- 저장 항목 삭제
-- 네이버 로그인 세션 연결
-- 다운로드 진행 상태 표시 및 취소
+## Download / Release
 
-## 개인정보 및 책임 안내
+Latest release: [Naver Cafe Archive Manager v0.1.0](https://github.com/Bum-Boo/Naver-Cafe-Posts-Downloader/releases/tag/v0.1.0)
 
-이 앱은 사용자의 로컬 PC에서 실행되는 도구입니다.
+Windows ZIP:
 
-- 개발자 및 배포자는 사용자의 로컬 파일에 접근할 권한이 없습니다.
-- 개발자 및 배포자는 사용자의 네이버 로그인 정보, 쿠키, 세션, 저장된 게시글, 이미지, 다운로드 기록을 수집하지 않습니다.
-- 로그인 세션과 저장된 게시글은 사용자의 PC 안에 있는 `data/`, `saved_posts/` 폴더에만 저장됩니다.
-- 앱은 네이버 비밀번호를 저장하지 않습니다.
-- 사용자가 직접 로그인한 네이버 세션에서 볼 수 있는 카페 글만 저장합니다.
-- 카페 접근 권한, 멤버 등급, 비공개 글 제한을 우회하지 않습니다.
-- 저장된 파일, 로그인 세션, 압축 파일 공유로 인해 발생하는 개인정보 노출 책임은 사용자에게 있습니다.
-- 다른 사람에게 프로그램을 공유할 때는 본인이 사용한 `data/`, `saved_posts/` 폴더를 포함하지 마세요.
+- [NaverCafeArchiveManager-v0.1.0-win64.zip](https://github.com/Bum-Boo/Naver-Cafe-Posts-Downloader/releases/download/v0.1.0/NaverCafeArchiveManager-v0.1.0-win64.zip)
 
-배포용 ZIP 파일에는 개발자의 로그인 세션이나 저장된 게시글이 포함되어 있지 않습니다.
+## Preview
 
-## 데모 흐름
+The app connects a user-controlled browser login session, downloads allowed posts, and opens generated local pages for offline review.
 
-실제 데모는 네이버 로그인 세션을 연결한 뒤, 카페 게시글 URL을 입력하고 로컬 저장 결과를 확인하는 흐름입니다.
+![Login session applied](docs/demo-screenshots/naver-live-01-session-applied.png)
 
-1. `dist\NaverCafeArchiveManager\NaverCafeArchiveManager.exe`를 실행합니다.
-2. `네이버 로그인 세션 연결`을 누르고 브라우저에서 직접 로그인합니다.
-3. 앱 상단에 `세션 상태: 적용됨`이 보이면 게시글 URL을 입력합니다.
-4. `다운로드` 버튼을 누릅니다.
-5. 진행 창에서 게시글 열기, 본문 추출, 이미지 다운로드, 로컬 페이지 생성 단계를 확인합니다.
-6. `다운로드 완료`가 보이면 왼쪽 목록에서 저장된 게시글을 선택합니다.
-7. 오른쪽 미리보기와 `저장 페이지 열기`로 로컬 저장 결과를 확인합니다.
+<details>
+<summary>View demo walkthrough</summary>
 
-먼저 `네이버 로그인 세션 연결`을 눌러 브라우저에서 로그인합니다. 앱 상단에 `세션 상태: 적용됨`이 보이면 인증 세션이 연결된 상태입니다.
+1. Run `dist\NaverCafeArchiveManager\NaverCafeArchiveManager.exe`.
+2. Connect a Naver login session in the browser.
+3. Enter an individual post URL or menu URL.
+4. Click `Download`.
+5. Review progress for opening the post, extracting text, downloading images, and generating a local page.
+6. Select the saved post from the local list.
+7. Open the generated local HTML page for offline reading.
 
-![로그인 세션 적용됨](docs/demo-screenshots/naver-live-01-session-applied.png)
+![Cafe post URL entered](docs/demo-screenshots/naver-live-02-url-entered.png)
 
-저장할 카페 게시글 URL을 입력한 뒤 오른쪽의 `다운로드` 버튼을 누릅니다.
+![Download result](docs/demo-screenshots/naver-live-04-download-result.png)
 
-![카페 게시글 URL 입력](docs/demo-screenshots/naver-live-02-url-entered.png)
+![Saved item selected](docs/demo-screenshots/naver-live-05-saved-item-selected.png)
 
-진행 창에서는 게시글 열기, 본문 추출, 이미지 다운로드, 로컬 페이지 생성 순서로 로그가 표시됩니다.
+![Generated local page](docs/demo-screenshots/naver-live-06-local-page.png)
 
-![다운로드 완료](docs/demo-screenshots/naver-live-04-download-result.png)
+</details>
 
-다운로드가 끝나면 왼쪽 목록에서 저장된 게시글을 선택하고, 오른쪽 미리보기에서 제목과 본문 요약을 확인합니다.
+## Quick Start
 
-![저장된 게시글 선택](docs/demo-screenshots/naver-live-05-saved-item-selected.png)
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+python app.py
+```
 
-`저장 페이지 열기`를 누르면 브라우저에서 로컬 HTML 페이지가 열려 오프라인 보관 결과를 확인할 수 있습니다.
+## Documentation
 
-![로컬 저장 페이지](docs/demo-screenshots/naver-live-06-local-page.png)
+- [Quickstart text](README_QUICKSTART.txt)
+- [Usage](USAGE.md)
+- [Portfolio case study](docs/portfolio-case-study.md)
+
+## Status
+
+This is a personal archive workflow tool. Public demos should use sanitized examples and should not include real private Cafe content, cookies, tokens, or saved third-party material.
