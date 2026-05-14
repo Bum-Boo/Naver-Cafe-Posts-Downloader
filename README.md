@@ -29,3 +29,24 @@
 - 다른 사람에게 프로그램을 공유할 때는 본인이 사용한 `data/`, `saved_posts/` 폴더를 포함하지 마세요.
 
 배포용 ZIP 파일에는 개발자의 로그인 세션이나 저장된 게시글이 포함되어 있지 않습니다.
+## Demo Walkthrough
+
+실제 데모는 네이버 로그인 세션을 연결한 뒤, 카페 게시글 URL을 입력하고 로컬 저장 결과를 확인하는 흐름입니다.
+
+1. `dist\NaverCafeArchiveManager\NaverCafeArchiveManager.exe`를 실행합니다.
+2. `네이버 로그인 세션 연결`을 누르고 브라우저에서 직접 로그인합니다.
+3. 앱 상단에 `세션 상태: 적용됨`이 보이면 게시글 URL을 입력합니다.
+4. `다운로드` 버튼을 누릅니다.
+5. 진행 창에서 게시글 열기, 본문 추출, 이미지 다운로드, 로컬 페이지 생성 단계를 확인합니다.
+6. `다운로드 완료`가 보이면 왼쪽 목록에서 저장된 게시글을 선택합니다.
+7. 오른쪽 미리보기와 `저장 페이지 열기`로 로컬 저장 결과를 확인합니다.
+
+![Login session applied](docs/demo-screenshots/naver-live-01-session-applied.png)
+
+![Cafe post URL entered](docs/demo-screenshots/naver-live-02-url-entered.png)
+
+![Download completed](docs/demo-screenshots/naver-live-04-download-result.png)
+
+![Saved post selected](docs/demo-screenshots/naver-live-05-saved-item-selected.png)
+
+![Local saved page](docs/demo-screenshots/naver-live-06-local-page.png)
