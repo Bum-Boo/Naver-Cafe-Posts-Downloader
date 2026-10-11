@@ -450,11 +450,12 @@ class SinglePostDownloadWorker(QThread):
 
     def request_cancel(self) -> None:
         self._cancel_requested = True
-        if self._duplicate_event is not None:
+        event = self._duplicate_event
+        if event is not None:
             # If the worker is waiting for the duplicate-folder confirmation
             # dialog, cancellation should release that wait immediately.
             self._duplicate_decision = False
-            self._duplicate_event.set()
+            event.set()
 
     def is_cancel_requested(self) -> bool:
         return self._cancel_requested
@@ -476,8 +477,9 @@ class SinglePostDownloadWorker(QThread):
 
     def resolve_duplicate_confirmation(self, should_continue: bool) -> None:
         self._duplicate_decision = should_continue
-        if self._duplicate_event is not None:
-            self._duplicate_event.set()
+        event = self._duplicate_event
+        if event is not None:
+            event.set()
 
     def run(self) -> None:
         try:

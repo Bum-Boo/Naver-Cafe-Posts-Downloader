@@ -65,6 +65,37 @@ class DuplicateConfirmationCancellationTests(unittest.TestCase):
         self.thread.start()
         self.assert_finished_with(False)
 
+    def test_cancel_uses_event_snapshot_during_confirmation_cleanup(self) -> None:
+        worker, event = self.make_cleanup_interleaving_worker()
+        worker.request_cancel()
+        self.assertTrue(event.is_set())
+        self.assertIsNone(worker._duplicate_event)
+
+    def test_resolution_uses_event_snapshot_during_confirmation_cleanup(self) -> None:
+        worker, event = self.make_cleanup_interleaving_worker()
+        worker.resolve_duplicate_confirmation(True)
+        self.assertTrue(event.is_set())
+        self.assertTrue(worker._duplicate_decision)
+        self.assertIsNone(worker._duplicate_event)
+
+    @staticmethod
+    def make_cleanup_interleaving_worker():
+        class CleanupInterleavingWorker(SinglePostDownloadWorker):
+            clear_after_read = False
+
+            def __getattribute__(self, name):
+                value = super().__getattribute__(name)
+                if name == "_duplicate_event" and self.clear_after_read:
+                    self.clear_after_read = False
+                    self._duplicate_event = None
+                return value
+
+        worker = CleanupInterleavingWorker("https://cafe.naver.com/synthetic/1")
+        event = threading.Event()
+        worker._duplicate_event = event
+        worker.clear_after_read = True
+        return worker, event
+
 
 if __name__ == "__main__":
     unittest.main()
