@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -26,7 +28,7 @@ def ensure_index_file(index_path: Path = DEFAULT_INDEX_PATH) -> None:
     # ignored by git because entries can contain private cafe post URLs/titles.
     index_path.parent.mkdir(parents=True, exist_ok=True)
     if not index_path.exists():
-        index_path.write_text(json.dumps({"posts": []}, ensure_ascii=False, indent=2), encoding="utf-8")
+        save_archive_index([], index_path)
 
 
 def load_archive_index(index_path: Path = DEFAULT_INDEX_PATH) -> list[dict[str, Any]]:
@@ -46,11 +48,28 @@ def load_archive_index(index_path: Path = DEFAULT_INDEX_PATH) -> list[dict[str, 
 
 
 def save_archive_index(posts: list[dict[str, Any]], index_path: Path = DEFAULT_INDEX_PATH) -> None:
+    serialized = json.dumps({"posts": posts}, ensure_ascii=False, indent=2)
     index_path.parent.mkdir(parents=True, exist_ok=True)
-    index_path.write_text(
-        json.dumps({"posts": posts}, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    temporary_path: Path | None = None
+    try:
+        # Finish writing before replacing user data. Keeping the temporary file
+        # beside the index makes the final replacement atomic on its filesystem.
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=index_path.parent,
+            prefix=f".{index_path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary_file:
+            temporary_path = Path(temporary_file.name)
+            temporary_file.write(serialized)
+            temporary_file.flush()
+            os.fsync(temporary_file.fileno())
+        os.replace(temporary_path, index_path)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
 
 
 def make_article_key(
