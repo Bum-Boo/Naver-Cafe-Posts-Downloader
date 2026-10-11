@@ -4,6 +4,8 @@
 
 네이버 카페에서 **본인이 열람할 권한이 있는 게시글**을 Windows PC에 개인용으로 보관하고, 로컬 HTML로 다시 볼 수 있게 해 주는 데스크톱 도구입니다. 앱에는 **Naver Cafe Archive Manager**라는 이름으로 표시됩니다.
 
+![저장한 글을 고르면 원본 주소, 저장 폴더, 미리보기가 함께 보이는 화면](docs/demo-screenshots/naver-live-05-saved-item-selected.png)
+
 > [!IMPORTANT]
 > 이 프로젝트는 네이버 또는 네이버 카페의 공식 제품이 아닙니다. 네이버 이용약관, 카페 운영정책, 저작권 및 개인정보 관련 법규를 확인하고 준수해 주세요.
 

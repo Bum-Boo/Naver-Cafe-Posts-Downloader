@@ -4,6 +4,8 @@
 
 A Windows desktop tool that saves **Naver Cafe posts you are authorized to view** for personal, local use and generates local HTML pages for later reading. The app is displayed as **Naver Cafe Archive Manager**.
 
+![A saved post selected, with its source URL, save folder and a preview of the local page](demo-screenshots/naver-live-05-saved-item-selected.png)
+
 > [!IMPORTANT]
 > This is not an official Naver or Naver Cafe product. You are responsible for following Naver's terms, Cafe policies, copyright rules, and privacy laws.
 
