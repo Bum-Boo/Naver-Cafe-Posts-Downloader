@@ -450,26 +450,36 @@ class SinglePostDownloadWorker(QThread):
 
     def request_cancel(self) -> None:
         self._cancel_requested = True
-        if self._duplicate_event is not None:
+        event = self._duplicate_event
+        if event is not None:
             # If the worker is waiting for the duplicate-folder confirmation
             # dialog, cancellation should release that wait immediately.
             self._duplicate_decision = False
-            self._duplicate_event.set()
+            event.set()
 
     def is_cancel_requested(self) -> bool:
         return self._cancel_requested
 
     def confirm_existing_folder(self, folder: Path, title: str) -> bool:
         self._duplicate_decision = False
-        self._duplicate_event = threading.Event()
-        self.duplicate_folder_found.emit(str(folder.resolve()), title)
-        self._duplicate_event.wait()
-        return self._duplicate_decision
+        event = threading.Event()
+        self._duplicate_event = event
+        try:
+            # Register the event before checking cancellation so a cancel that
+            # races with this confirmation can always release the pending wait.
+            if self.is_cancel_requested():
+                return False
+            self.duplicate_folder_found.emit(str(folder.resolve()), title)
+            event.wait()
+            return self._duplicate_decision and not self.is_cancel_requested()
+        finally:
+            self._duplicate_event = None
 
     def resolve_duplicate_confirmation(self, should_continue: bool) -> None:
         self._duplicate_decision = should_continue
-        if self._duplicate_event is not None:
-            self._duplicate_event.set()
+        event = self._duplicate_event
+        if event is not None:
+            event.set()
 
     def run(self) -> None:
         try:
